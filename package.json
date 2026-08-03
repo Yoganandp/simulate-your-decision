@@ -1,0 +1,20 @@
+{
+  "name": "decision-studio-public-multi-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local multi-agent business decision simulator using public AdventureWorks data and the user's choice of Copilot, Claude, or Codex CLI.",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "setup:data": "node scripts/fetch-data.mjs",
+    "check:provider": "node scripts/check-provider.mjs",
+    "serve": "node src/server.mjs",
+    "test:engine": "node test/engine-test.mjs",
+    "test": "node test/ai-engine-unit.mjs && node test/scenario-smoke.mjs && node test/retail-smoke.mjs",
+    "data": "node src/loadAdventureWorks.mjs",
+    "overview": "node src/overview.mjs",
+    "simulate": "node src/run.mjs",
+    "report": "node src/report.mjs",
+    "all": "node src/run.mjs && node src/report.mjs"
+  }
+}

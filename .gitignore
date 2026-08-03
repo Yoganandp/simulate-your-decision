@@ -1,0 +1,8 @@
+config/ai-provider.json
+data/adventureworks/*
+!data/adventureworks/README.md
+out/*
+!out/.gitkeep
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,302 @@
+// scenarioLive.mjs — a LIVING simulation. The change is treated as already having happened;
+// every persona (comprehensive bike-shop roster + real customers) reacts as they actually
+// would, round after round, each seeing the reactions of the people who affect them. A
+// dedicated measurement agent turns the reactions into metrics each round; we stop when the
+// metrics stabilize (or hit a max of 10 rounds).
+
+import { loadCustomers, loadSales, buildIndividuals } from "./loadAdventureWorks.mjs";
+import { sampleEmployees, sampleVendors, sampleResellers } from "./loadOrg.mjs";
+
+export const isLive = true;
+export const title = "Living Simulation · AdventureWorks (real data)";
+export const datasetNote = "Real AdventureWorks org: 290 employees, 100 vendors, 701 resellers, 18,484 customers. Personas run on a full model and react as if the change already happened, propagating through a relationship network (MiroFish-inspired).";
+export const PERSONA_MODEL = null;
+export const ANALYST_MODEL = null;
+export const MAX_ROUNDS = 10;
+export const EPSILON = 4;         // metric stabilization threshold (0-100 scale)
+
+export const DEFAULT_PROPOSAL = {
+  title: "Raise the free-shipping threshold to $75",
+  text: "Free shipping now requires a $75 order (up from $50). Orders below $75 pay standard shipping.",
+};
+
+// ---- metric definitions (analyst output) ----
+export const METRICS = [
+  ["revenue_index", "Revenue", "index"],
+  ["gross_margin_index", "Gross margin", "index"],
+  ["customer_satisfaction", "Customer satisfaction", "up"],
+  ["employee_morale", "Employee morale", "up"],
+  ["fulfillment_reliability", "Fulfillment reliability", "up"],
+  ["supplier_health", "Supplier health", "up"],
+  ["operational_strain", "Operational strain", "down"],
+  ["churn_risk", "Customer churn risk", "down"],
+];
+const defaultMetrics = () => ({ revenue_index: 100, gross_margin_index: 100, customer_satisfaction: 70, employee_morale: 70, fulfillment_reliability: 75, supplier_health: 75, operational_strain: 35, churn_risk: 30, state: "baseline" });
+
+// ---- roster: comprehensive bike-shop stakeholders ----
+const GROUPS = ["exec", "managers", "frontline", "supply", "customers"];
+const GROUP_LABEL = { exec: "Leadership", managers: "Managers", frontline: "Frontline staff", supply: "Supply chain", customers: "Customers" };
+// who each group hears from between rounds (reaction propagation)
+const LISTENS = {
+  customers: ["customers", "frontline"],
+  frontline: ["customers", "managers"],
+  managers: ["frontline", "customers", "exec"],
+  exec: ["managers", "customers", "supply"],
+  supply: ["managers", "exec"],
+};
+
+// Roster is built from REAL AdventureWorks records (DimEmployee / Vendor / DimReseller)
+// via loadOrg.mjs — see roster() below.
+
+function slug(s) { return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, ""); }
+function customerHead(u) {
+  return `You are ONE specific real AdventureWorks customer: ${u.age || "an adult"} years old, household income ~$${u.income.toLocaleString()}, you work in ${u.occupation}, you live in ${u.region}${u.homeOwner ? ", you own your home" : ""}. You currently spend about $${u.annualSpend.toLocaleString()}/year across ~${u.ordersPerYear} orders (typical order $${u.avgOrderValue.toLocaleString()}).`;
+}
+
+export function prepare(proposal = DEFAULT_PROPOSAL, opts = {}) {
+  const sampleSize = Math.max(4, Math.min(120, parseInt(opts.sampleSize || 32, 10)));
+  const employeesN = Math.max(6, Math.min(60, parseInt(opts.employees || 22, 10)));
+  const customers = loadCustomers(), sales = loadSales();
+  const { individuals, totalCustomers, weight } = buildIndividuals(customers, sales, sampleSize);
+  const baselineRevenue = individuals.reduce((s, u) => s + u.annualSpend * weight, 0);
+  const employees = sampleEmployees(employeesN);
+  const vendors = sampleVendors(5);
+  const resellers = sampleResellers(4);
+  return { proposal, sampleSize, individuals, totalCustomers, weight, baselineRevenue, maxRounds: MAX_ROUNDS, employees, vendors, resellers };
+}
+
+function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function pickIds(arr, n, exclude) { const pool = shuffleArr(arr.filter((x) => x !== exclude)); return pool.slice(0, n).map((x) => x.id); }
+// MiroFish-inspired relationship graph: connect each persona to specific others so reactions
+// propagate along real edges (used by both the simulation and the visualization).
+function assignNeighbors(all) {
+  const g = {}; for (const p of all) (g[p.group] = g[p.group] || []).push(p);
+  const frontline = g.frontline || [], managers = g.managers || [], exec = g.exec || [], supply = g.supply || [], customers = g.customers || [];
+  for (const p of all) {
+    let nb = [];
+    if (p.group === "customers") nb = [...pickIds(customers, 2, p), ...pickIds(frontline, 1, p)];
+    else if (p.group === "frontline") nb = [...pickIds(customers, 2, p), ...pickIds(managers, 1, p)];
+    else if (p.group === "managers") nb = [...pickIds(frontline, 2, p), ...pickIds(exec, 1, p)];
+    else if (p.group === "exec") nb = [...pickIds(managers, 2, p), ...pickIds(supply, 1, p)];
+    else if (p.group === "supply") nb = [...pickIds(exec, 1, p), ...pickIds(supply, 1, p)];
+    p.neighbors = nb.filter(Boolean);
+  }
+}
+
+export function roster(ctx) {
+  const staff = ctx.employees.map((e) => ({
+    id: "emp-" + e.key, kind: "employee", group: e.group, label: `${e.first} ${e.last}`,
+    context: `${e.title} · ${e.dept}`, listensTo: LISTENS[e.group],
+    head: `You are ${e.first} ${e.last}, ${e.title} in the ${e.dept} department at AdventureWorks (a bike manufacturer & retailer). You've been here ${e.tenure ? "~" + e.tenure + " years" : "a while"}${e.hireYear ? " (hired " + e.hireYear + ")" : ""}, paid $${e.rate}${e.salaried ? " (salaried)" : "/hr"}. React from your real day-to-day work — your workload, your team, and how you feel.`,
+  }));
+  const vendors = ctx.vendors.map((v) => ({
+    id: "ven-" + v.id, kind: "supply", group: "supply", label: v.name, context: `Supplier · credit ${v.creditRating}/5${v.preferred ? " · preferred" : ""}`, listensTo: LISTENS.supply,
+    head: `You run ${v.name}, a real supplier to AdventureWorks (your credit rating with them is ${v.creditRating}/5${v.preferred ? ", and you're a preferred vendor" : ""})${v.totalSpend ? `. They buy about $${v.totalSpend.toLocaleString()} of parts from you` : ""}. React based on how the change affects your orders and your business.`,
+  }));
+  const resellers = ctx.resellers.map((r, i) => ({
+    id: "res-" + i, kind: "supply", group: "supply", label: r.name, context: `Reseller · ${r.region}`, listensTo: LISTENS.supply,
+    head: `You run ${r.name}, a ${r.businessType} in ${r.region} that resells AdventureWorks bikes (${r.productLine} line). You have ${r.numEmployees} staff and about $${r.annualSales.toLocaleString()}/yr in sales${r.yearOpened ? ", open since " + r.yearOpened : ""}. React based on how the change affects your wholesale relationship with them.`,
+  }));
+  const cust = ctx.individuals.map((u) => ({ id: "cust-" + u.key, kind: "customer", group: "customers", label: `Customer #${u.key}`, context: `${u.age || "adult"}yo · $${u.income.toLocaleString()} · ${u.occupation} · ${u.region}`, listensTo: LISTENS.customers, entity: u }));
+  const all = [...staff, ...vendors, ...resellers, ...cust];
+  assignNeighbors(all);
+  return all;
+}
+
+// ---- prompts ----
+const CUST_SCHEMA = [
+  "Respond with ONLY a JSON object (no markdown, no comments). Keys:",
+  '{"reaction": <what goes through your head / your immediate behavior, first person>,',
+  ' "decision": <the concrete thing(s) you will actually DO now — e.g. buy less, bundle orders, switch to a competitor, cancel, complain, wait, or carry on as normal>,',
+  ' "sentiment": <number -2 (angry) .. +2 (delighted)>,',
+  ' "spend_delta_pct": <number: change in your yearly spend, + or ->,',
+  ' "churn_delta_pct": <number: + = more likely to shop elsewhere, - = more loyal>,',
+  ' "how_it_feels": <one honest sentence about how it feels>}',
+].join("\n");
+const EMP_SCHEMA = [
+  "Respond with ONLY a JSON object (no markdown, no comments). Keys:",
+  '{"reaction": <what goes through your head at work, first person>,',
+  ' "decision": <the concrete thing(s) you will actually DO — e.g. push back to your manager, work overtime, cut corners, escalate, adapt your process, start looking for another job, or carry on as normal>,',
+  ' "sentiment": <number -2 (demoralized) .. +2 (energized): your morale>,',
+  ' "workload_change": <number -2 (much lighter) .. +2 (overwhelmed/overworked)>,',
+  ' "effectiveness_change": <number -2 (can barely cope) .. +2 (working better)>,',
+  ' "how_it_feels": <one honest sentence incl. the human/workload impact>}',
+].join("\n");
+
+export function personaPrompt(ctx, p, round, inbox) {
+  const head = p.kind === "customer" ? customerHead(p.entity) : p.head;
+  return [
+    head, "",
+    "This is NOT hypothetical and NOT a survey. The change below has just happened at AdventureWorks and you are living through it right now. Picture your actual day. Be this person — do not give advice or recommendations to anyone.",
+    `What just happened: "${ctx.proposal.text}"`,
+    round > 1 && inbox
+      ? `\nIt's a bit later. Here's what's on your mind and what you're hearing from the people around you:\n${inbox}\nYou can hold firm, adapt, or change your mind.`
+      : "\nThese are the first days. This is your gut, in-the-moment reaction.",
+    "",
+    "Decide what you actually DO about it — your concrete next actions and choices — as well as how it makes you feel. Be specific and behavioral, not vague or hedged.",
+    p.kind === "customer" ? CUST_SCHEMA : EMP_SCHEMA,
+  ].join("\n");
+}
+
+function groupDigest(group, reactions) {
+  const rs = reactions.filter((r) => r.parsed && r.group === group);
+  if (!rs.length) return null;
+  const sent = rs.reduce((s, r) => s + (+r.parsed.sentiment || 0), 0) / rs.length;
+  const picks = rs.map((r) => r.parsed.reaction || r.parsed.how_it_feels).filter(Boolean);
+  const sample = picks.sort(() => Math.random() - 0.5).slice(0, 3);
+  const mood = sent > 0.5 ? "mostly upbeat" : sent < -0.5 ? "frustrated" : "mixed";
+  return `• ${GROUP_LABEL[group]} are ${mood} (avg mood ${sent.toFixed(1)}): ${sample.map((s) => `"${s}"`).join("; ")}`;
+}
+export function buildInboxes(rosterArr, reactions) {
+  const byId = {}; for (const r of reactions) if (r.id) byId[r.id] = { label: r.label, group: r.group, parsed: r.parsed };
+  const out = {};
+  for (const p of rosterArr) {
+    const lines = [];
+    const own = byId[p.id];
+    if (own && own.parsed) { const d = own.parsed.decision || own.parsed.reaction; if (d) lines.push(`• You, last time: "${d}"`); }
+    const neigh = (p.neighbors || []).map((id) => byId[id]).filter((x) => x && x.parsed).slice(0, 3);
+    for (const nb of neigh) { const who = nb.group === "customers" ? "A customer you know" : nb.label; const say = nb.parsed.decision || nb.parsed.reaction || nb.parsed.how_it_feels; if (say) lines.push(`• ${who}: "${say}"`); }
+    const mood = (p.listensTo || []).map((g) => groupDigest(g, reactions)).filter(Boolean).slice(0, 2);
+    out[p.id] = [...lines, ...mood].join("\n");
+  }
+  return out;
+}
+export function fullDigest(reactions) { return GROUPS.map((g) => groupDigest(g, reactions)).filter(Boolean).join("\n"); }
+
+export function measurementPrompt(ctx, round, reactions, prev) {
+  return [
+    "You are the business analyst for AdventureWorks (online + retail bikes & accessories). Read how people are ACTUALLY reacting to a change and estimate the current state of the business.",
+    `Change in effect: "${ctx.proposal.text}"`,
+    `Round ${round}. Reactions across the organization and customers:`,
+    fullDigest(reactions) || "(no clear reactions yet)",
+    prev ? `\nYour previous estimate was: ${JSON.stringify(prev)}. Update it to reflect how things are trending now.` : "",
+    "",
+    "Respond with ONLY a JSON object (no markdown, no comments). All values are numbers.",
+    "revenue_index and gross_margin_index are indexed to 100 = exactly the same as before the change (e.g. 96 = 4% worse, 105 = 5% better).",
+    "customer_satisfaction, employee_morale, fulfillment_reliability, supplier_health are 0-100 (higher = better).",
+    "operational_strain and churn_risk are 0-100 (higher = WORSE).",
+    'Keys: {"revenue_index":n,"gross_margin_index":n,"customer_satisfaction":n,"employee_morale":n,"fulfillment_reliability":n,"supplier_health":n,"operational_strain":n,"churn_risk":n,"state":"<one sentence summary>"}',
+  ].join("\n");
+}
+
+export function alternativesPrompt(ctx, agg) {
+  const m = (agg.metrics || []).map((x) => `${x.label} ${x.value}`).join(", ");
+  return [
+    "You are a sharp, pragmatic business strategist advising the CEO of AdventureWorks (a bikes & accessories manufacturer + retailer).",
+    `They just simulated this decision: "${ctx.proposal.text}"`,
+    `How it settled — ${agg.verdictLabel}. ${agg.summaryText}`,
+    `Final business health: ${m}.`,
+    "Propose 2-3 ALTERNATIVE decisions that would likely do BETTER — reach the same goal while protecting profit, customers and staff more. Each must be a concrete, specific change the CEO could actually make and re-simulate (not vague advice).",
+    'Respond with ONLY a JSON object: {"alternatives":[{"title":<short label>,"text":<the concrete alternative decision, 1-2 sentences, phrased as the change to make>,"rationale":<one sentence on why it should do better>}]}',
+  ].join("\n");
+}
+
+export function converged(prev, cur) {
+  if (!prev || !cur) return { converged: false, delta: Infinity };
+  let max = 0; for (const [k] of METRICS) { const d = Math.abs((+cur[k] || 0) - (+prev[k] || 0)); if (d > max) max = d; }
+  return { converged: max < EPSILON, delta: +max.toFixed(1) };
+}
+
+// ---- final aggregation ----
+const money = (n) => { const a = Math.abs(n), s = n < 0 ? "-" : ""; if (a >= 1e6) return `${s}$${(a / 1e6).toFixed(2)}M`; if (a >= 1e3) return `${s}$${(a / 1e3).toFixed(0)}K`; return `${s}$${Math.round(a)}`; };
+const sMoney = (n) => (n > 0 ? "+" : "") + money(n);
+const num = (v, d = 0) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+
+function serialize(r) {
+  const p = r.parsed || {};
+  const st = r.kind === "customer"
+    ? (num(p.sentiment) >= 0.5 ? "support" : num(p.sentiment) <= -0.5 ? "oppose" : "neutral")
+    : (num(p.sentiment) >= 0.5 ? "support" : num(p.sentiment) <= -0.5 ? "oppose" : "neutral");
+  return {
+    label: r.label, context: r.context, group: r.group, stance: r.parsed ? st : "pending",
+    metrics: Object.fromEntries(Object.entries(p).filter(([k, v]) => typeof v === "number")),
+    reaction: p.reaction || "", decision: p.decision || "", how_it_feels: p.how_it_feels || "",
+    reasoning: p.reaction || p.how_it_feels || "(no reaction)", extra: {},
+  };
+}
+
+export function aggregate(ctx, reactions, metricsHistory) {
+  const m = metricsHistory[metricsHistory.length - 1] || defaultMetrics();
+  const custs = reactions.filter((r) => r.kind === "customer" && r.parsed);
+  const emps = reactions.filter((r) => r.kind === "employee" && r.parsed);
+
+  // grounded money from customer spend reactions
+  let revImpact = 0, volGP = 0, sw = 0, swSent = 0, swChurn = 0;
+  const rollup = new Map();
+  for (const r of custs) {
+    const u = r.entity, p = r.parsed, w = ctx.weight, base = u.annualSpend, margin = (u.marginPct || 41) / 100;
+    const ri = base * (num(p.spend_delta_pct) / 100) * w;
+    revImpact += ri; volGP += ri * margin; sw += w; swSent += w * num(p.sentiment); swChurn += w * num(p.churn_delta_pct);
+    const key = u.region; if (!rollup.has(key)) rollup.set(key, { segment: key, n: 0, sd: 0, sent: 0, ri: 0 });
+    const g = rollup.get(key); g.n++; g.sd += num(p.spend_delta_pct); g.sent += num(p.sentiment); g.ri += ri;
+  }
+  const revDeltaPct = ctx.baselineRevenue ? 100 * revImpact / ctx.baselineRevenue : 0;
+  const marginRateDelta = (num(m.gross_margin_index, 100) - 100);
+  const grossProfitImpact = volGP + (ctx.baselineRevenue + revImpact) * (marginRateDelta / 100);
+  const sentiment = sw ? swSent / sw : 0;
+  const empMorale = emps.length ? emps.reduce((s, r) => s + num(r.parsed.sentiment), 0) / emps.length : 0;
+  const empWorkload = emps.length ? emps.reduce((s, r) => s + num(r.parsed.workload_change), 0) / emps.length : 0;
+
+  const dir = (good) => (good ? "improve" : "worsen"); const near0 = (x, e) => Math.abs(x) < e;
+  const kpis = [
+    { name: "Revenue impact / year", display: sMoney(revImpact), sub: `${revDeltaPct >= 0 ? "+" : ""}${revDeltaPct.toFixed(1)}% of ${money(ctx.baselineRevenue)}`, direction: near0(revDeltaPct, .25) ? "neutral" : dir(revImpact > 0) },
+    { name: "Profit impact / year", display: sMoney(grossProfitImpact), sub: "after margin effects", direction: near0(grossProfitImpact, 2000) ? "neutral" : dir(grossProfitImpact > 0) },
+    { name: "Customer satisfaction", display: Math.round(num(m.customer_satisfaction, 70)) + "/100", sub: `mood ${sentiment >= 0 ? "+" : ""}${sentiment.toFixed(2)}`, direction: dir(num(m.customer_satisfaction, 70) >= 65) },
+    { name: "Employee morale", display: Math.round(num(m.employee_morale, 70)) + "/100", sub: empWorkload > 0.4 ? "workload up" : empWorkload < -0.4 ? "workload down" : "steady", direction: dir(num(m.employee_morale, 70) >= 60 && empWorkload < 1) },
+    { name: "Fulfillment reliability", display: Math.round(num(m.fulfillment_reliability, 75)) + "/100", sub: "supply + warehouse", direction: dir(num(m.fulfillment_reliability, 75) >= 70) },
+    { name: "Churn risk", display: Math.round(num(m.churn_risk, 30)) + "/100", sub: "lower is better", direction: dir(num(m.churn_risk, 30) < 40) },
+  ];
+
+  const economics = {
+    title: "Estimated yearly money impact (grounded in real customer spend)",
+    rows: [
+      { label: "Revenue today", value: money(ctx.baselineRevenue), kind: "info" },
+      { label: "Revenue after the change", value: money(ctx.baselineRevenue + revImpact), kind: "info" },
+      { label: "= Change in revenue", value: sMoney(revImpact), kind: revImpact >= 0 ? "pos" : "neg" },
+      { label: "Gross profit from spending change", value: sMoney(volGP), kind: volGP >= 0 ? "pos" : "neg" },
+      { label: `Margin-rate effect (analyst: ${marginRateDelta >= 0 ? "+" : ""}${marginRateDelta.toFixed(1)})`, value: sMoney(grossProfitImpact - volGP), kind: (grossProfitImpact - volGP) >= 0 ? "pos" : "neg" },
+      { label: "= Change in yearly profit", value: sMoney(grossProfitImpact), kind: "total" },
+    ],
+    note: "Money is grounded in each customer's real spend × their reaction. The soft metrics (satisfaction, morale, etc.) come from the measurement agent reading everyone's reactions.",
+  };
+
+  const segmentTable = [...rollup.values()].map((g) => ({ segment: g.segment, n: g.n, baseSpend: 0, spendDeltaPct: +(g.sd / g.n).toFixed(1), revImpact: sMoney(g.ri), sentiment: +(g.sent / g.n).toFixed(1) })).sort((a, b) => a.sentiment - b.sentiment);
+
+  // verdict
+  const good = grossProfitImpact > Math.max(2000, 0.004 * ctx.baselineRevenue) && num(m.customer_satisfaction, 70) >= 62 && num(m.employee_morale, 70) >= 58;
+  const bad = grossProfitImpact < -Math.max(2000, 0.004 * ctx.baselineRevenue) || num(m.customer_satisfaction, 70) < 50 || num(m.employee_morale, 70) < 45 || num(m.churn_risk, 30) > 55;
+  const verdict = bad ? "bad" : good ? "good" : "caution";
+  const verdictLabel = verdict === "good" ? "Settles out well" : verdict === "bad" ? "Settles out badly" : "Mixed once it settles";
+
+  const worst = segmentTable[0], best = segmentTable[segmentTable.length - 1];
+  const verb = grossProfitImpact >= 0 ? "adds about" : "costs about";
+  const summaryText =
+    `After ${metricsHistory.length} round${metricsHistory.length > 1 ? "s" : ""}, things settle here: profit ${verb} ${money(Math.abs(grossProfitImpact))}/yr; customers land at ${Math.round(num(m.customer_satisfaction, 70))}/100 satisfaction and staff at ${Math.round(num(m.employee_morale, 70))}/100 morale${empWorkload > 0.4 ? " (feeling more stretched)" : ""}. ` +
+    (worst && best && worst.segment !== best.segment ? `${worst.segment} customers take it worst; ${best.segment} best. ` : "") +
+    (m.state ? `Analyst read: ${m.state}` : "");
+
+  const crowd = (() => { const s = custs.map((r) => num(r.parsed.sentiment)); const pos = s.filter((x) => x > 0.25).length, neg = s.filter((x) => x < -0.25).length; return { n: s.length, positivePct: Math.round(100 * pos / (s.length || 1)), negativePct: Math.round(100 * neg / (s.length || 1)), neutralPct: Math.round(100 * (s.length - pos - neg) / (s.length || 1)) }; })();
+
+  // groups for report / inspector, ordered
+  const order = ["exec", "managers", "frontline", "supply", "customers"];
+  const groups = order.map((g) => ({ title: GROUP_LABEL[g], note: g === "customers" ? "real people, sampled" : "", agents: reactions.filter((r) => r.group === g && r.parsed).map(serialize) })).filter((x) => x.agents.length);
+
+  const metricsView = METRICS.map(([k, label, kind]) => ({ key: k, label, kind, value: Math.round(num(m[k], kind === "index" ? 100 : 50)) }));
+
+  const methodology = [
+    `The change was simulated as if it already happened. ${custs.length} real customers and ${emps.length} employees/supply-chain roles each reacted in character.`,
+    `Between rounds, each persona saw a digest of the reactions from the people who affect them (customers⇄frontline⇄managers⇄leadership⇄supply), so reactions propagate.`,
+    `A measurement agent converted each round's reactions into metrics; the simulation ran ${metricsHistory.length} round${metricsHistory.length > 1 ? "s" : ""} until they stabilized (max ${MAX_ROUNDS}).`,
+    `Persona agents ran on the locally selected AI CLI; money is grounded in real spend, margin and shipping.`,
+  ];
+
+  return {
+    kpis, economics, groups, segmentTable, verdict, verdictLabel, summaryText, crowd, methodology,
+    metrics: metricsView, metricsHistory,
+  };
+}
+
+export default {
+  isLive, title, datasetNote, PERSONA_MODEL, ANALYST_MODEL, MAX_ROUNDS, METRICS, DEFAULT_PROPOSAL,
+  prepare, roster, personaPrompt, buildInboxes, fullDigest, measurementPrompt, alternativesPrompt, converged, aggregate,
+};
