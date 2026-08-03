@@ -6,5 +6,4 @@ repository at pinned commit
 [`1ab31bc560415b570d57bb5ff9896f4698891321`](https://github.com/microsoft/sql-server-samples/commit/1ab31bc560415b570d57bb5ff9896f4698891321).
 
 Those sample files are distributed under the MIT License reproduced in
-`third_party/microsoft-sql-server-samples-LICENSE.txt`. No private Microsoft
-services, package feeds, repositories, credentials, or internal APIs are used.
+`third_party/microsoft-sql-server-samples-LICENSE.txt`.

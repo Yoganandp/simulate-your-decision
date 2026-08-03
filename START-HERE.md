@@ -1,39 +1,30 @@
 # Start here
 
-## Give this folder to your AI assistant
+## Let your AI agent set it up
 
-Tell Copilot, Claude, or Codex:
+Clone or download the repo, open a terminal in this folder, and launch `copilot`,
+`claude`, or `codex`. Then paste:
 
-> Set up Decision Studio with your own CLI and run it.
+> Set up and run this project using your own CLI. Check the prerequisites, run the
+> setup for your provider, start the server, verify it is healthy, and give me the
+> local URL.
 
-The repository instructions tell each assistant to select itself:
+Open the URL the agent gives you, normally <http://localhost:5050>.
 
-```bash
-# GitHub Copilot CLI
-npm run setup -- --provider copilot
-
-# Claude Code
-npm run setup -- --provider claude
-
-# Codex CLI
-npm run setup -- --provider codex
-```
-
-Then it should run:
-
-```bash
-npm run serve
-```
-
-Open <http://localhost:5050>.
-
-## Run it yourself
+## Or run it yourself
 
 ```bash
 npm run setup
 npm run serve
 ```
 
-Setup asks which installed AI CLI to use, verifies login, and downloads the SHA-256-verified
-public AdventureWorks sample data. No private Microsoft dependency or project API key is
-required.
+## What should I type?
+
+Describe one specific decision with concrete details:
+
+> Starting next quarter, raise the free-shipping threshold from $50 to $75 for online
+> orders. Keep standard shipping at $7.95 and try to improve margin without increasing
+> customer churn.
+
+Good inputs state what changes, the old and new values, who is affected, and the goal.
+Paste the decision into **Compose** and press the arrow.

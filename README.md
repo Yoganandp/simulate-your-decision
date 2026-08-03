@@ -1,58 +1,35 @@
 # Decision Studio
 
-Decision Studio simulates how a bike company’s customers, employees, suppliers, and
-resellers may react to a business decision over several rounds. It runs locally using
-the user’s choice of:
+Decision Studio lets you describe a business decision and watch simulated customers,
+employees, suppliers, and resellers react over several rounds. It runs locally with
+GitHub Copilot CLI, Claude Code, or Codex CLI and uses the public AdventureWorks sample
+dataset.
 
-- GitHub Copilot CLI
-- Claude Code
-- Codex CLI
+## Easiest setup: hand it to your AI agent
 
-The business data is the public AdventureWorks sample from
-[`microsoft/sql-server-samples`](https://github.com/microsoft/sql-server-samples).
-No private Microsoft repositories, feeds, services, credentials, or internal APIs are used.
+1. Clone or download this repository.
+2. Open a terminal in the project folder.
+3. Start the AI CLI you already use: `copilot`, `claude`, or `codex`.
+4. Paste this:
 
-## Quick start
+> Set up and run this project using your own CLI. Check the prerequisites, run the
+> setup for your provider, start the server, verify it is healthy, and give me the
+> local URL.
 
-Requirements: Node.js 18+ and at least one supported AI CLI installed and signed in.
+The repository includes provider-specific instructions, so the agent chooses the right
+setup command automatically. When it finishes, open <http://localhost:5050>.
+
+## Manual setup
+
+Requirements: Node.js 18+ and one supported AI CLI installed and signed in.
 
 ```bash
 npm run setup
 npm run serve
 ```
 
-`npm run setup` asks which installed AI CLI to use, verifies its login with a tiny live
-request, downloads the pinned public dataset, and saves the local choice in the ignored
-file `config/ai-provider.json`.
-
-Open <http://localhost:5050>.
-
-There are no npm dependencies and no API keys stored by this project. Each CLI reuses its
-own existing authentication.
-
-## Non-interactive setup
-
-An AI assistant or install script can choose the provider directly:
-
-```bash
-npm run setup -- --provider copilot
-npm run setup -- --provider claude
-npm run setup -- --provider codex
-```
-
-Optional flags:
-
-```bash
-npm run setup -- --provider claude --model sonnet
-npm run setup -- --provider codex --provider-only
-npm run setup -- --data-only
-npm run setup -- --provider copilot --skip-provider-check
-```
-
-At runtime, `AI_PROVIDER` and `AI_MODEL` override the saved config. Provider-specific
-executable overrides are `COPILOT_CLI_PATH`, `CLAUDE_CLI_PATH`, and `CODEX_CLI_PATH`.
-
-## Install and sign in to an AI CLI
+Setup asks which installed AI CLI to use, verifies the sign-in, downloads the dataset,
+and remembers the provider locally.
 
 | Provider | Install | Sign in |
 | --- | --- | --- |
@@ -60,49 +37,47 @@ executable overrides are `COPILOT_CLI_PATH`, `CLAUDE_CLI_PATH`, and `CODEX_CLI_P
 | Claude Code | [Official setup](https://code.claude.com/docs/en/setup) | `claude auth login` |
 | Codex CLI | [Official setup](https://developers.openai.com/codex/cli) | `codex login` |
 
-If setup says a credential is rejected, sign out and back in with that CLI, then rerun
-`npm run setup`.
+## What to type into Decision Studio
 
-## Exact public dataset
+Write the change as a concrete decision, not as a general question. Include numbers and
+who is affected when you know them.
 
-The installer downloads the same AdventureWorks records used by this project from public
-commit:
+**Template**
 
-`1ab31bc560415b570d57bb5ff9896f4698891321`
+> Starting [when], change [policy, price, product, or process] from [current state] to
+> [new state] for [affected group]. The goal is [goal]. Keep [important constraint].
 
-It uses the public data-warehouse and OLTP CSVs for:
+**Examples**
 
-- 18,484 customers and their demographics
-- 60,398 internet-sales lines
-- products and product categories
-- employees and departments
-- vendors and purchase orders
-- resellers and sales territories
+- Starting next quarter, raise the free-shipping threshold from $50 to $75 for online
+  orders. Keep standard shipping at $7.95 and try to improve margin without increasing
+  customer churn.
+- Launch a $49 annual membership that includes free shipping and 10% off purchases.
+- Increase bike prices by 8% in every region, while leaving accessories and shipping
+  unchanged.
+- Open a flagship store in Seattle and fund it by reducing online discounts.
 
-Every file is SHA-256 verified against `scripts/fetch-data.mjs`. The upstream sample is
-MIT-licensed; see `THIRD_PARTY_NOTICES.md`. These are fictional sample records, not real
-people.
+Paste the decision into the **Compose** box and press the arrow. You can also click a
+preset to see the expected format.
 
-## How it works
+## Dataset
 
-1. `loadAdventureWorks.mjs` and `loadOrg.mjs` turn the public CSVs into grounded customer,
-   employee, vendor, and reseller personas.
-2. `aiEngine.mjs` sends tool-less/read-only non-interactive prompts through the selected CLI.
-3. Personas react in character and see neighboring reactions in later rounds.
-4. A measurement pass converts reactions into business metrics and a grounded revenue/profit
-   estimate.
-5. The browser streams each response and displays the rationale, outcome, and alternatives.
+Setup downloads selected AdventureWorks CSV files from
+[`microsoft/sql-server-samples`](https://github.com/microsoft/sql-server-samples) at
+commit `1ab31bc560415b570d57bb5ff9896f4698891321`.
+
+The data includes 18,484 sample customers, 60,398 internet-sales lines, products,
+employees, vendors, resellers, and territories. Downloads are SHA-256 verified by
+`scripts/fetch-data.mjs`. See `THIRD_PARTY_NOTICES.md` for the upstream MIT license.
 
 ## Useful commands
 
 ```bash
-npm test                 # provider-independent unit and scenario smoke tests
-npm run check:provider   # live login/provider check
-npm run data             # rebuild customer segments
-npm run overview         # rebuild business overview
-npm run simulate         # terminal simulation
-npm run report           # render out/demo.html
+npm test
+npm run check:provider
+npm run setup:data
+npm run simulate
+npm run report
 ```
 
-Outputs are directional estimates and vary by model. They are for exploring decisions, not
-guaranteed forecasts.
+Outputs are directional estimates for exploring decisions, not guaranteed forecasts.
