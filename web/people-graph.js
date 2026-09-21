@@ -692,7 +692,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       destroyed = true; controller.abort(); observer?.disconnect();
       clearTimeout(hideTimer); win.cancelAnimationFrame(resizeFrame);
       root.replaceChildren(); root.classList.remove('people-graph');
-      for (const map of [actorElements, hubElements, edgeElements, groupElements, scenarioButtons, roundButtons, groupButtons, positions]) map.clear();
+      for (const map of [actorElements, hubElements, edgeElements, scenarioButtons, roundButtons, groupButtons, positions]) map.clear();
       input = {}; topology = { nodes: [], edges: [] }; model = derivePeopleGraphState();
     },
   };
