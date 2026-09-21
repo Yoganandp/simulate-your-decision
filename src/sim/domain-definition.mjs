@@ -25,6 +25,9 @@ const ASSUMPTION_DEFAULTS = {
   employeeMaxAdditionalCapacity: 2, laborMinutesPerCapacityUnit: 15, supplierCapacityUnits: 6,
   supplierLeadTimeCycles: 1, resellerMaxUnitsPerOrder: 3,
 };
+const CONVERSATION_PRESET = "conversational-shipping-v1";
+const CONVERSATION_COSTS = { fulfillmentCostPerOrderCents: 500, incrementalLaborRateCentsPerHour: 2400 };
+const PRESET_RATIONALE = "Automatically applied illustrative conversational preset; not measured source evidence or a manually reviewed value.";
 const ASSUMPTION_IDS = {
   stockPerProductUnits: "a-stock", panelCapacityPerCycle: "a-capacity", customerBudgetMultiplierBps: "a-budget",
   resellerBudgetCents: "a-reseller-budget", fulfillmentCostPerOrderCents: "a-fulfillment",
@@ -174,9 +177,13 @@ export function comparisonKey(definition, inputs) {
     seed: definition.seed, objective: definition.objective, constraints: definition.constraints });
 }
 
-function prepare(input, synthetic = false) {
+function prepare(input, synthetic = false, preparation = {}) {
+  keys(preparation, ["preset"], "preparation options");
+  const preset = preparation.preset;
+  check(preset === undefined || preset === CONVERSATION_PRESET, "Unsupported automatic assumption preset");
   keys(input, ["decisionText", "title", "seed", "customerCount", "employeeCount", "supplierCount", "resellerCount",
     "cycles", "baseline", "options", "assumptions", "runConfig", "objective", "constraints", ...(synthetic ? ["unitCostCents", "basket"] : [])], "preparation input");
+  check(!preset || input.assumptions === undefined, "Automatic preset assumptions cannot be mixed with user-supplied assumptions");
   const decisionText = text(input.decisionText ?? "Compare free-shipping thresholds.", "decisionText", 4000);
   const seed = text(String(input.seed ?? "shipping-h0"), "seed", 120, 1);
   const counts = countsFrom(input), cycles = integer(input.cycles ?? 3, "cycles", 1, 3);
@@ -185,15 +192,18 @@ function prepare(input, synthetic = false) {
   policy(baseline, "baseline");
   const parsed = parseText(decisionText, baseline);
   const chosenOptions = input.options ?? parsed.options;
-  array(chosenOptions, "options", 2, 1);
-  const scenarios = [{ scenarioId: "baseline", label: "Baseline", isBaseline: true, policy: baseline, interventions: [], originalText: decisionText },
+  array(chosenOptions, "options", preset ? 1 : 2, 1);
+  const scenarios = [{ scenarioId: "baseline", label: preset ? "Option A" : "Baseline", isBaseline: true, policy: baseline, interventions: [], originalText: decisionText },
     ...chosenOptions.map((option, index) => normalizeOption(option, index, baseline, decisionText))];
-  const values = { ...ASSUMPTION_DEFAULTS, panelCapacityPerCycle: source.customers.length + source.operational.filter(actor => actor.role === "reseller").length, ...(input.assumptions || {}) };
+  const values = { ...ASSUMPTION_DEFAULTS, panelCapacityPerCycle: source.customers.length + source.operational.filter(actor => actor.role === "reseller").length,
+    ...(preset ? CONVERSATION_COSTS : input.assumptions || {}) };
   validateAssumptionValues(values);
   const assumptions = Object.entries(values).map(([key, value]) => ({
     assumptionId: ASSUMPTION_IDS[key], key, description: DESCRIPTIONS[key], value,
-    rationale: "Explicit exploratory panel-scale input, not a measured AdventureWorks operating policy.",
-    owner: "experiment_owner", approvalState: "review_required", source: Object.hasOwn(input.assumptions || {}, key) ? "user" : "adapter_default",
+    rationale: preset ? PRESET_RATIONALE : "Explicit exploratory panel-scale input, not a measured AdventureWorks operating policy.",
+    owner: preset ? "simulation_preset" : "experiment_owner", approvalState: preset ? "not_reviewed" : "review_required",
+    source: preset ? "preset" : Object.hasOwn(input.assumptions || {}, key) ? "user" : "adapter_default",
+    ...(preset ? { presetId: preset } : {}),
     affectedMetrics: METRIC_DEFINITIONS.map(metric => metric.metricId),
   }));
   for (const [assumptionId, description, value] of ADAPTER_ASSUMPTIONS) assumptions.push({
@@ -296,8 +306,8 @@ function prepare(input, synthetic = false) {
   return { definition: freeze(definition), inputs: freeze(inputs), questions: parsed.questions.slice(0, 3), warnings,
     estimate: { plannedActions, maxAttempts: Math.min(runConfig.attemptCap, plannedActions * 2 + 1) } };
 }
-export function prepareExperiment(input = {}) { return prepare(input); }
-export function prepareSyntheticFixture(input = {}) { return prepare(input, true); }
+export function prepareExperiment(input = {}, preparation = {}) { return prepare(input, false, preparation); }
+export function prepareSyntheticFixture(input = {}, preparation = {}) { return prepare(input, true, preparation); }
 
 export function validateExperiment(definition, inputs) {
   object(definition, "definition"); object(inputs, "inputs");
@@ -394,9 +404,18 @@ export function validateExperiment(definition, inputs) {
   unique(inputs.assumptions.map(item => item.key), "assumption keys");
   check(inputs.assumptions.length === Object.keys(ASSUMPTION_IDS).length + ADAPTER_ASSUMPTIONS.length, "Unexpected assumption set");
   for (const assumption of inputs.assumptions) {
-    keys(assumption, ["assumptionId", "key", "description", "value", "rationale", "owner", "approvalState", "source", "affectedMetrics"], "assumption");
+    keys(assumption, ["assumptionId", "key", "description", "value", "rationale", "owner", "approvalState", "source", "affectedMetrics", "presetId"], "assumption");
     text(assumption.description, "assumption description", 1000, 1);
-    check(assumption.owner === "experiment_owner" && assumption.approvalState === "review_required" && ["user", "adapter_default"].includes(assumption.source), "Invalid assumption metadata");
+    if (assumption.source === "preset") {
+      check(assumption.owner === "simulation_preset" && assumption.approvalState === "not_reviewed"
+        && assumption.presetId === CONVERSATION_PRESET && assumption.rationale === PRESET_RATIONALE
+        && Object.hasOwn(ASSUMPTION_DEFAULTS, assumption.key), "Invalid automatic preset metadata");
+      const expected = { ...ASSUMPTION_DEFAULTS, panelCapacityPerCycle: snapshot.entityCounts.customers + snapshot.entityCounts.resellers, ...CONVERSATION_COSTS };
+      check(assumption.value === expected[assumption.key], "Automatic preset value differs from its declared preset");
+    } else {
+      check(!Object.hasOwn(assumption, "presetId") && assumption.owner === "experiment_owner" && assumption.approvalState === "review_required"
+        && ["user", "adapter_default"].includes(assumption.source), "Invalid assumption metadata");
+    }
     check(stableHash(assumption.affectedMetrics) === stableHash(METRIC_DEFINITIONS.map(metric => metric.metricId)), "Invalid assumption metric coverage");
     if (Object.hasOwn(ASSUMPTION_IDS, assumption.key)) {
       check(assumption.assumptionId === ASSUMPTION_IDS[assumption.key] && assumption.description === DESCRIPTIONS[assumption.key], "Operating assumption ID/definition mismatch");
@@ -405,6 +424,10 @@ export function validateExperiment(definition, inputs) {
       check(expected && assumption.assumptionId === expected[0] && assumption.description === expected[1]
         && stableHash(assumption.value) === stableHash(expected[2]), "Adapter assumption differs from declared H0 mechanics");
     }
+  }
+  if (inputs.assumptions.some(item => item.source === "preset")) {
+    check(inputs.assumptions.filter(item => Object.hasOwn(ASSUMPTION_DEFAULTS, item.key)).every(item => item.source === "preset"),
+      "Automatic preset assumptions must remain a complete declared set");
   }
   const values = Object.fromEntries(inputs.assumptions.filter(item => Object.hasOwn(ASSUMPTION_DEFAULTS, item.key)).map(item => [item.key, item.value]));
   check(Object.keys(values).length === Object.keys(ASSUMPTION_DEFAULTS).length, "Missing operating assumptions"); validateAssumptionValues(values);

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Copilot Simulations (prototype)</title>
+  <link rel="stylesheet" href="/simulations.css">
+  <script type="module" src="/simulations.js"></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to experiment</a>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Back to the Copilot-style conversation">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span>Copilot Simulations <span class="prototype">(advanced workbench)</span></span>
+    </a>
+    <nav class="header-actions" aria-label="Workspace">
+      <button type="button" id="new-experiment" class="button subtle">New experiment</button>
+      <button type="button" id="history-button" class="button secondary">History</button>
+    </nav>
+  </header>
+
+  <main id="main">
+    <div class="workspace-heading">
+      <p class="eyebrow">A decision workspace, not a crystal ball</p>
+      <p class="workspace-note">AdventureWorks sample business data <span aria-hidden="true">·</span> Shipping policy</p>
+    </div>
+    <nav class="step-nav" aria-label="Experiment workflow">
+      <button type="button" data-section="prepare-section" aria-current="step"><span>01</span> Prepare</button>
+      <button type="button" data-section="run-section" disabled><span>02</span> Simulate</button>
+      <button type="button" data-section="compare-section" disabled><span>03</span> Compare &amp; decide</button>
+    </nav>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+
+    <section id="prepare-section" aria-labelledby="prepare-heading">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Explore the decision before the commitment</p>
+          <h1 id="prepare-heading">What decision are<br class="desktop-break"> you considering?</h1>
+          <p class="hero-copy">Test a shipping policy with a shared panel of sample customers. Inspect their simulated choices, compare the consequences, and shape a better pilot.</p>
+          <p class="trust-line"><span aria-hidden="true">↗</span> Simulate decisions. Not a prediction guarantee.</p>
+        </div>
+        <aside class="hero-aside" aria-label="How this experiment works">
+          <span class="tiny-label">ONE QUESTION. SHARED CONDITIONS.</span>
+          <div class="scenario-illustration" aria-hidden="true">
+            <span class="scenario-node baseline-node">$50<small>Baseline</small></span>
+            <span class="scenario-node">$75<small>Option A</small></span>
+            <span class="scenario-node">$100<small>Option B</small></span>
+          </div>
+          <p>Same panel. Same starting conditions.<br>Three shopping cycles. Different policies.</p>
+          <span class="caption">Illustrative thresholds, not observed company policy.</span>
+        </aside>
+      </div>
+
+      <form id="experiment-form">
+        <div class="card compose-card">
+          <div class="section-top">
+            <label class="field-heading" for="decision-text">Describe the change you want to explore</label>
+            <span class="badge">H0 · Shipping policy</span>
+          </div>
+          <textarea id="decision-text" data-draft rows="4" maxlength="4000" required placeholder="Should we raise our free-shipping threshold from $50 to $75 or $100, with a $7.95 fee below it?"></textarea>
+          <p class="hint">This prototype normalizes shipping thresholds and fees. After preparation, the structured fields below are authoritative; description edits do not silently change them. Other requests may need clarification rather than being simulated.</p>
+          <div class="compose-footer">
+            <button type="button" id="sample-button" class="button sample-button">↗ Use shipping-policy example</button>
+            <button type="submit" id="prepare-button" class="button primary">Prepare experiment <span aria-hidden="true">→</span></button>
+          </div>
+        </div>
+
+        <details id="setup-settings" class="card settings">
+          <summary>Experiment setup <span class="summary-note">Panel, model &amp; execution limits</span></summary>
+          <div class="settings-body">
+            <div class="field-grid">
+              <label class="wide">Experiment title<input id="experiment-title" data-draft maxlength="160" placeholder="Shipping policy review"></label>
+              <label>Sample customers<input id="customer-count" data-draft type="number" min="1" max="24" step="1" value="12" required></label>
+              <label>Employees<input id="employee-count" data-draft type="number" min="0" max="4" step="1" value="2" required></label>
+              <label>Suppliers<input id="supplier-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
+              <label>Resellers<input id="reseller-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
+              <label>Shopping cycles<input id="cycle-count" data-draft type="number" min="1" max="3" step="1" value="3" required></label>
+              <label>Panel seed<input id="panel-seed" data-draft value="shipping-policy-demo" maxlength="120" required></label>
+            </div>
+            <p class="hint">Requested counts are not coverage claims. The prepared draft reports the actual frozen panel. Cycles are purchase opportunities, not years.</p>
+            <div class="runtime-settings">
+              <div class="section-top"><h3>Explicit model configuration</h3><span class="badge neutral">GitHub Copilot</span></div>
+              <p class="hint">Prefer an available MAI-Code model. Enter an exact model ID supported by your account and CLI; this app never guesses an ID or silently falls back. Verification may make a small schema-check model call.</p>
+              <div class="model-row">
+                <label>Requested model ID<input id="model-id" data-draft autocomplete="off" spellcheck="false" maxlength="120" placeholder="Exact ID from your installed Copilot CLI"></label>
+                <button type="button" id="preflight-button" class="button secondary" aria-label="Verify model">Verify model</button>
+              </div>
+              <div id="provider-status" class="provider-status" aria-live="polite">No model verified. Preparation does not start a simulation.</div>
+              <div class="field-grid execution-fields">
+                <label>Concurrent calls<input id="concurrency" data-draft type="number" min="1" max="8" step="1" value="4" required></label>
+                <label>Hard attempt budget<input id="attempt-cap" data-draft type="number" min="1" max="1000" step="1" value="320" required></label>
+                <label>Run deadline (minutes)<input id="deadline-minutes" data-draft type="number" min="1" max="30" step="1" value="15" required></label>
+                <label>Call timeout (seconds)<input id="call-timeout" data-draft type="number" min="1" max="120" step="1" value="60" required></label>
+              </div>
+              <p class="hint">Every attempt counts, including repairs and failures. A hard cap is a ceiling, not a promised cost estimate. H0 uses one repetition per option.</p>
+            </div>
+          </div>
+        </details>
+
+        <div id="draft-review" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Review before running</p><h2>Your experiment, made explicit</h2></div>
+            <span id="draft-state" class="badge">Unsaved draft</span>
+          </div>
+          <div id="draft-questions" class="notice warning" hidden></div>
+          <div id="draft-warnings" class="notice warning" hidden></div>
+          <div class="review-grid">
+            <section class="card pad" aria-labelledby="scope-heading">
+              <h3 id="scope-heading">Objective &amp; guardrails</h3>
+              <label for="objective-choice">Choose what this experiment should optimize</label>
+              <select id="objective-choice" data-draft>
+                <option value="contribution:maximize">Maximize simulated panel contribution</option>
+                <option value="purchases:maximize">Maximize fulfilled panel purchases</option>
+                <option value="abandonmentRate:minimize">Minimize simulated abandonment rate</option>
+                <option value="stockouts:minimize">Minimize simulated stockouts</option>
+                <option value="productRevenue:maximize">Maximize panel product revenue</option>
+              </select>
+              <p id="objective-summary" class="objective">Maximize simulated panel contribution.</p>
+              <p id="objective-explanation" class="hint">Product revenue + shipping revenue − cost of goods − shipping costs − incremental labor. Excludes overhead, taxes and capital costs; not net profit.</p>
+              <div id="objective-details"></div>
+              <div class="guardrail-editor inset">
+                <label class="checkbox-label"><input id="guardrail-enabled" data-draft type="checkbox"> Require a maximum simulated abandonment rate</label>
+                <label for="guardrail-max-abandonment">Maximum abandoned purchase opportunities (%)</label>
+                <input id="guardrail-max-abandonment" data-draft type="number" min="0" max="100" step="0.01" value="20" required disabled>
+                <p class="hint">Hard guardrail across every option, including baseline. Enter 20 for at most 20%; the saved threshold is 0.20. Denominator: scheduled customer purchase opportunities, not annual churn.</p>
+              </div>
+              <div id="constraint-details"></div>
+              <p class="hint">Changing success criteria requires reprepare and review. Policy revisions preserve the saved objective and guardrails; changing them starts a separate experiment.</p>
+              <div id="horizon-details" class="inset"></div>
+            </section>
+            <section class="card pad" aria-labelledby="source-heading">
+              <div class="section-top"><h3 id="source-heading">Source &amp; panel</h3><span class="badge neutral">Sample data</span></div>
+              <div id="source-summary"></div>
+              <details class="inline-details"><summary>Source coverage &amp; frozen identifiers</summary><div id="source-details"></div></details>
+            </section>
+          </div>
+          <section class="card pad options-section" aria-labelledby="options-heading">
+            <div class="section-top"><div><h3 id="options-heading">Baseline &amp; options</h3><p class="hint">Thresholds and fees are reviewed scenario assumptions, in US dollars.</p></div><button type="button" id="add-option" class="button secondary">Add option</button></div>
+            <div id="policy-options" class="policy-grid"></div>
+          </section>
+          <section class="card pad" aria-labelledby="assumptions-heading">
+            <div class="section-top"><div><h3 id="assumptions-heading">Assumptions, not source facts</h3><p class="hint">Review synthetic costs, budgets, stock and capacity. Blank cost inputs mean unknown, never zero. Changed inputs require a new prepared draft.</p></div><span class="badge warning-badge">Review required</span></div>
+            <div id="assumption-inputs" class="field-grid"></div>
+            <details class="inline-details"><summary>All assumptions &amp; their references</summary><div id="assumption-list"></div></details>
+            <details class="inline-details"><summary>Metric definitions &amp; denominators</summary><div id="metric-definitions"></div></details>
+          </section>
+          <div class="card run-gate">
+            <div id="estimate" class="estimate"></div>
+            <div class="gate-right">
+              <label class="checkbox-label"><input type="checkbox" id="review-confirm"> I reviewed the options, unknowns and synthetic assumptions.</label>
+              <div class="button-row">
+                <button type="button" id="reprepare-button" class="button secondary" hidden>Reprepare changes</button>
+                <button type="button" id="save-button" class="button primary" disabled>Save reviewed version</button>
+                <button type="button" id="start-button" class="button primary" disabled>Start simulation</button>
+              </div>
+              <p id="save-hint" class="hint">Save a reviewed, immutable version before starting.</p>
+            </div>
+          </div>
+          <div id="lineage" class="caption"></div>
+        </div>
+      </form>
+    </section>
+
+    <section id="run-section" aria-labelledby="run-heading" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">A shared world, changing with each cycle</p><h1 id="run-heading">Simulation workspace</h1><p id="run-identity" class="caption"></p></div>
+        <div class="button-row"><span id="run-state" class="badge">Not started</span><button type="button" id="cancel-button" class="button danger" disabled>Cancel run</button></div>
+      </div>
+      <div class="notice neutral-notice">All activity below is simulated. Leaving this page or disconnecting the viewer does not cancel work. Only “Cancel run” requests cancellation.</div>
+      <section class="card pad progress-card" aria-label="Run progress">
+        <div class="section-top"><h2 id="progress-label" aria-live="polite">Waiting for validated actions</h2><span id="current-cycle" class="caption"></span></div>
+        <progress id="run-progress" max="1" value="0" aria-labelledby="progress-label"></progress>
+        <div id="status-counts" class="status-counts"></div>
+        <p id="run-budget" class="hint"></p>
+        <p id="stream-status" class="caption" role="status" aria-live="polite"></p>
+        <button type="button" id="reconnect-button" class="button subtle" hidden>Reconnect viewer (no new model calls)</button>
+      </section>
+      <div class="live-grid">
+        <section class="card pad" aria-labelledby="feed-heading"><div class="section-top"><h2 id="feed-heading">Simulated activity</h2><span class="badge neutral">Committed record</span></div><ol id="event-feed" class="event-feed"></ol><p id="feed-empty" class="empty-copy">Validated actions will appear after a whole shopping cycle is committed.</p></section>
+        <section class="card pad" aria-labelledby="actors-heading"><h2 id="actors-heading">Meet the simulated panel</h2><p class="hint">Inspect a sample record’s context and its own observations. Profiles are not validated digital twins.</p><div id="actor-panel" class="actor-panel"></div></section>
+      </div>
+      <div class="section-heading"><p class="hint">Interim totals are incomplete and never ranked.</p><button type="button" id="view-comparison" class="button primary">View comparison <span aria-hidden="true">→</span></button></div>
+    </section>
+
+    <section id="compare-section" aria-labelledby="compare-heading" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">Follow every number back to its events</p><h1 id="compare-heading">Compare &amp; decide</h1><p id="comparison-subtitle" class="hint"></p></div>
+        <div class="button-row"><button type="button" id="replay-button" class="button secondary" disabled>Exact replay · no model calls</button><button type="button" id="revision-button" class="button secondary" disabled>Revise an option</button></div>
+      </div>
+      <div id="comparison-verdict" class="notice neutral-notice" role="status"></div>
+      <div id="comparison-warnings"></div>
+      <div class="card comparison-card">
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Scenario comparison; scroll horizontally on small screens">
+          <table id="comparison-table"><caption>Simulated outcomes for the frozen, unweighted panel. Select a value to inspect its ledger.</caption><thead></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div class="review-grid">
+        <section class="card pad"><h3>How to read this comparison</h3><p>One run per option, not a real-world confidence interval. Purchase deferrals and abandonments are simulated actions, not annual churn. Contribution is limited to declared costs.</p><p class="hint">The panel is unweighted. These outcomes do not estimate the whole customer population. Missing costs remain unknown; incomplete scenarios are not recommendations.</p></section>
+        <section class="card pad"><h3>Review the people behind the totals</h3><p class="hint">Inspect accepted actions, information boundaries and generated justifications before choosing a pilot.</p><div id="comparison-actors" class="actor-chips"></div></section>
+      </div>
+      <section class="card pad brief-section" aria-labelledby="brief-heading">
+        <div class="section-top"><div><h2 id="brief-heading">From experiment to decision brief</h2><p class="hint">Available only for complete, comparable results. Stored metrics supply the numbers; edit the Markdown for your team.</p></div><button type="button" id="brief-button" class="button primary" disabled>Create brief</button></div>
+        <div id="brief-editor" hidden>
+          <label for="brief-markdown">Editable decision brief (Markdown; never executed as HTML)</label>
+          <textarea id="brief-markdown" rows="20" spellcheck="true"></textarea>
+          <div class="section-top"><p id="brief-status" class="caption"></p><button type="button" id="download-brief" class="button secondary">Download Markdown</button></div>
+          <p class="hint">Edits are saved locally in this browser for this run. Review numeric edits against the linked metric records before sharing; the generated server copy remains unchanged.</p>
+        </div>
+      </section>
+    </section>
+
+    <footer class="page-footer">
+      <div><strong>Simulated outcomes. Reviewable evidence.</strong><p>No automatic deployment, customer contact or promise of real-world accuracy.</p></div>
+      <a href="/legacy">Legacy exploratory scenarios (not comparable)</a>
+    </footer>
+  </main>
+
+  <dialog id="history-dialog" aria-labelledby="history-heading">
+    <div class="dialog-heading"><div><p class="eyebrow">Saved, not restarted</p><h2 id="history-heading">Experiment history</h2></div><button type="button" class="icon-button" data-close aria-label="Close history">×</button></div>
+    <p class="hint">Load a saved version or reconnect to a run. Viewing history never starts inference.</p>
+    <div id="history-list"></div>
+  </dialog>
+  <dialog id="detail-dialog" aria-labelledby="detail-heading">
+    <div class="dialog-heading"><h2 id="detail-heading">Evidence inspector</h2><button type="button" class="icon-button" data-close aria-label="Close inspector">×</button></div>
+    <div id="detail-content"></div>
+  </dialog>
+  <dialog id="evidence-dialog" aria-labelledby="evidence-heading">
+    <div class="dialog-heading"><h2 id="evidence-heading">Source reference</h2><button type="button" class="icon-button" data-close aria-label="Close source reference">×</button></div>
+    <div id="evidence-content"></div>
+  </dialog>
+  <dialog id="revision-dialog" aria-labelledby="revision-heading">
+    <div class="dialog-heading"><div><p class="eyebrow">A fresh counterfactual, not a continuation</p><h2 id="revision-heading">Review a policy revision</h2></div><button type="button" class="icon-button" data-close aria-label="Close revision">×</button></div>
+    <p class="hint">Keep the snapshot, panel, graph, opportunities, initial state, model and horizon fixed. Change only these policy fields. The baseline will be simulated again.</p>
+    <form id="revision-form">
+      <label for="revision-text">Decision note (descriptive; structured fields below define the change)</label>
+      <textarea id="revision-text" rows="3" maxlength="4000"></textarea>
+      <div id="revision-options" class="revision-options"></div>
+      <button type="button" id="revision-example" class="button subtle">Example: first option $75 threshold, $3.95 fee</button>
+      <h3>Exact normalized policy diff</h3>
+      <div id="revision-diff" class="inset"></div>
+      <p id="revision-parent" class="caption"></p>
+      <label class="checkbox-label"><input type="checkbox" id="revision-confirm" required> I reviewed this exact policy difference.</label>
+      <div class="dialog-actions"><button type="submit" class="button primary" id="save-revision">Save revision (does not run)</button></div>
+    </form>
+  </dialog>
+  <noscript><p class="notice error">Enable JavaScript to prepare experiments and inspect saved simulations. No model calls start without your explicit action.</p></noscript>
+</body>
+</html>

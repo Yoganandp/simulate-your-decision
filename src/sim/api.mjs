@@ -1,6 +1,7 @@
 import * as domain from "./domain.mjs";
 import { createStore, LIMITS, SimulationError, contentHash, publicError, redactDebug, safeId } from "./store.mjs";
 import { RunManager, validateRunConfig } from "./runManager.mjs";
+import { prepareConversation } from "./conversation.mjs";
 
 function objectBody(value, allowed) {
   if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !allowed.includes(key))) {
@@ -104,6 +105,18 @@ export async function createSimulationApi({ root, engineFactory, preflight } = {
   let closed = false;
   let activeRequests = 0;
 
+  function issueDraft(draft) {
+    validateRunConfig(draft.definition, draft.inputs);
+    for (const [key, issued] of issuedDrafts) {
+      if (Date.now() - issued.createdAt > draftLifetimeMs) issuedDrafts.delete(key);
+    }
+    if (issuedDrafts.size >= 64) issuedDrafts.delete(issuedDrafts.keys().next().value);
+    issuedDrafts.set(`${draft.definition.experimentId}:${draft.definition.version}`, {
+      bundleHash: contentHash({ definition: draft.definition, inputs: draft.inputs }), createdAt: Date.now(),
+    });
+    return draft;
+  }
+
   function saveReviewed(bundle, serverRevision = false) {
     const validated = validateBundle(bundle);
     const key = `${validated.definition.experimentId}:${validated.definition.version}`;
@@ -194,20 +207,17 @@ export async function createSimulationApi({ root, engineFactory, preflight } = {
         return true;
       }
       if (parts[1] === "experiments") {
+        if (parts.length === 3 && parts[2] === "conversation" && method === "POST") {
+          const draft = await prepareConversation(objectBody(await body(req), ["decisionText"]));
+          send(res, 200, issueDraft(draft));
+          return true;
+        }
         if (parts.length === 3 && parts[2] === "draft" && method === "POST") {
           const input = validateDraftInput(await body(req));
           let draft;
           try { draft = await domain.prepareExperiment(input); }
           catch { throw new SimulationError("INVALID_DRAFT", "The shipping-policy draft could not be prepared. Check supported options, inputs and reviewed assumptions."); }
-          validateRunConfig(draft.definition, draft.inputs);
-          for (const [key, issued] of issuedDrafts) {
-            if (Date.now() - issued.createdAt > draftLifetimeMs) issuedDrafts.delete(key);
-          }
-          if (issuedDrafts.size >= 64) issuedDrafts.delete(issuedDrafts.keys().next().value);
-          issuedDrafts.set(`${draft.definition.experimentId}:${draft.definition.version}`, {
-            bundleHash: contentHash({ definition: draft.definition, inputs: draft.inputs }), createdAt: Date.now(),
-          });
-          send(res, 200, draft);
+          send(res, 200, issueDraft(draft));
           return true;
         }
         if (parts.length === 2 && method === "POST") {

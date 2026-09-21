@@ -57,6 +57,61 @@ await test("Stable snapshots, explicit labels, source/assumption links and bound
   assert.throws(() => stableHash({ missing: undefined }), /object/);
 });
 
+await test("Automatic presets carry validated non-user provenance before immutable hashes are created", () => {
+  const input = { customerCount: 2, employeeCount: 1, supplierCount: 1, resellerCount: 1,
+    options: [{ label: "Option B", thresholdCents: 7500 }], runConfig: { model: "recorded-arithmetic-test" } };
+  const preparation = { preset: "conversational-shipping-v1" };
+  const bundle = prepareSyntheticFixture(input, preparation);
+  const { definition, inputs } = bundle;
+  assert.equal(definition.scenarios[0].label, "Option A");
+  assert.equal(definition.scenarios.length, 2);
+  assert.equal(definition.status, "ready");
+  const presets = inputs.assumptions.filter(item => item.source === "preset");
+  assert.equal(presets.length, 11);
+  assert.ok(presets.every(item => item.owner === "simulation_preset" && item.approvalState === "not_reviewed"
+    && item.presetId === preparation.preset && item.rationale.includes("not measured source evidence or a manually reviewed value")));
+  assert.ok(inputs.assumptions.every(item => item.source !== "user"));
+  assert.equal(presets.find(item => item.key === "fulfillmentCostPerOrderCents").value, 500);
+  assert.equal(presets.find(item => item.key === "incrementalLaborRateCentsPerHour").value, 2400);
+  assert.equal(presets.find(item => item.key === "panelCapacityPerCycle").value, 3);
+  assert.ok(Object.isFrozen(definition) && Object.isFrozen(inputs.assumptions[0]));
+  assert.doesNotThrow(() => validateExperiment(definition, inputs));
+  const legacy = prepareSyntheticFixture({ ...input, assumptions: { fulfillmentCostPerOrderCents: 500 } });
+  assert.equal(legacy.definition.scenarios[0].label, "Baseline");
+  assert.equal(legacy.inputs.assumptions.find(item => item.key === "fulfillmentCostPerOrderCents").source, "user");
+  assert.equal(legacy.inputs.assumptions.find(item => item.key === "fulfillmentCostPerOrderCents").approvalState, "review_required");
+  assert.equal(legacy.inputs.assumptions.find(item => item.key === "incrementalLaborRateCentsPerHour").value, null);
+  assert.throws(() => prepareSyntheticFixture(input, { preset: "unrecognized" }), /Unsupported automatic/);
+  assert.throws(() => prepareSyntheticFixture(input, { source: "preset" }), /unsupported/);
+  assert.throws(() => prepareSyntheticFixture({ ...input, assumptions: {} }, preparation), /cannot be mixed/);
+  assert.throws(() => prepareSyntheticFixture({ ...input, preset: preparation.preset }), /unsupported/);
+  assert.throws(() => prepareSyntheticFixture({ ...input, options: [...input.options, { thresholdCents: 10000 }] }, preparation), /options/);
+  const mutate = (change, message) => {
+    const changed = structuredClone(bundle);
+    change(changed.inputs.assumptions.find(item => item.key === "fulfillmentCostPerOrderCents"), changed);
+    delete changed.inputs.integrityHash;
+    changed.inputs.integrityHash = stableHash(changed.inputs);
+    changed.definition.comparisonKey = comparisonKey(changed.definition, changed.inputs);
+    delete changed.definition.definitionHash;
+    changed.definition.definitionHash = stableHash(changed.definition);
+    assert.throws(() => validateExperiment(changed.definition, changed.inputs), message);
+  };
+  for (const property of ["source", "owner", "approvalState", "presetId", "rationale"]) {
+    mutate(assumption => { assumption[property] = "false-attribution"; }, /metadata/);
+  }
+  mutate(assumption => { assumption.value = 501; }, /preset value/);
+  mutate(assumption => {
+    assumption.source = "user"; assumption.owner = "experiment_owner"; assumption.approvalState = "review_required";
+    delete assumption.presetId;
+  }, /complete declared set/);
+  mutate((assumption, changed) => {
+    Object.assign(changed.inputs.assumptions.find(item => item.key === "a-policy"), {
+      source: assumption.source, owner: assumption.owner, approvalState: assumption.approvalState,
+      presetId: assumption.presetId, rationale: assumption.rationale,
+    });
+  }, /preset metadata/);
+});
+
 await test("Actor prompts specify real action enums and a valid neutral no_action format example", async () => {
   const bundle = fixture({ customerCount: 1, cycles: 1 }), scenario = bundle.definition.scenarios[0], seenRoles = [];
   assert.equal(bundle.definition.promptVersion, "shipping-choice-h0.2");

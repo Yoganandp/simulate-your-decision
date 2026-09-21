@@ -9,21 +9,32 @@ npm run setup -- --provider copilot --model YOUR_AVAILABLE_MODEL_ID
 npm run serve
 ```
 
-Open <http://localhost:5050> and describe a shipping-policy change:
+Open <http://localhost:5050> for the Copilot-style conversation and describe two options:
 
-> Raise the free-shipping threshold from $50 to $75. Keep shipping at $7.95.
-> Compare contribution over three shopping cycles.
+> Compare free shipping over $50 with free shipping over $75.
+> Charge $7.95 below either threshold.
 
-Prepare the draft, review the baseline/options and every material assumption, then save
-and run. Missing costs remain unknown; supply reviewed values before expecting a
-contribution comparison. Inspect the underlying events and sample-record evidence,
-revise an option, and export a decision brief.
+The app prepares and saves the comparison, filling missing costs and operational inputs
+with labeled exploratory presets. There is no setup questionnaire. Select **Run
+simulation** in the inline card, or **Expand** to explore it full-screen.
+
+Hover, focus, or tap a person in the network to inspect their simulated choices.
+Switch options and rounds, or follow the live updates. Open **Outcomes** for the
+comparison and download a decision brief. The people view groups the sample panel by
+role; it does not invent relationship links when the frozen model has no graph edges.
 
 History survives a refresh. Replay uses saved actions without inference; Cancel stops
 work explicitly. Results are simulated, unweighted panel outcomes over purchase
 opportunities, not annual forecasts or observed customer behavior.
 
-The older exploratory interface remains at <http://localhost:5050/legacy>. Its heuristic
+The conversation requests `mai-code-1.1-flash` through your existing Copilot login;
+it does not silently substitute another model. This is a local Copilot-style prototype,
+not an embedded or deployed M365 Copilot app. Its conversational parser supports
+shipping thresholds and fees, not arbitrary business decisions.
+
+The detailed setup, custom model configuration, policy revisions and editable brief
+remain at <http://localhost:5050/advanced>. The older exploratory interface remains at
+<http://localhost:5050/legacy>. Its heuristic
 membership/retail outputs are separate from the shipping experiment workflow.
 
 The official Copilot SDK uses your existing Copilot login. A separate personal GitHub

@@ -31,36 +31,45 @@ The provider preflight makes a small structured request and reports requested id
 CLI version, and whether resolved identity is actually exposed. An unavailable model or
 authentication failure prevents a new experiment from running.
 
-Local settings are stored in ignored `config/ai-provider.json`. The UI also supports
-reviewing the explicit model before freezing an experiment. Never put tokens in a
+Local settings are stored in ignored `config/ai-provider.json`. The conversational
+preview explicitly requests `mai-code-1.1-flash`; it does not silently substitute another
+model. The detailed workbench at `/advanced` supports a different explicit model and
+reviewing it before freezing an experiment. Never put tokens in a
 proposal, source snapshot, config example, or git commit.
 
 ## Complete workflow
 
-1. Describe a shipping threshold or fee change and prepare an editable draft.
-2. Review the baseline and up to two alternatives, objective, guardrails, source coverage,
-   actual panel size, missing costs, operational assumptions, and call budget.
-3. Save and run. Progress comes from validated actions; partial rounds are not results.
-4. Compare complete options over the same shopping cycles. Inspect a metric's ledger
-   events or a stakeholder's facts, observations, actions, and generated explanation.
-5. Revise an option and run a fresh counterfactual with the original panel and conditions.
-6. Create, edit, and download a Markdown decision brief. Reopen history or replay saved
-   actions without new model calls.
+1. Start in the Copilot-style conversation and describe two shipping options naturally.
+2. The app prepares and saves the paired comparison, automatically applying labeled
+   missing-data presets. No assumption questionnaire or model configuration is required.
+3. Select **Run simulation** in the inline card. Expand it into a full-screen workspace
+   without navigating away from the conversation.
+4. Follow the live people graph, hover/focus/tap a stakeholder, and select an option
+   or round to inspect its saved choices. Only committed rounds contribute to outcomes;
+   a response that is still being validated is not a completed decision.
+5. Compare outcomes, inspect their supporting events, replay saved actions and download
+   a decision brief. Recent simulations and refresh reopen saved work without inference.
+
+The detailed workbench at `/advanced` retains editable preparation, objective/guardrail
+controls, policy revisions, custom model selection, and the editable Markdown brief.
 
 Example:
 
-> Raise the free-shipping threshold from $50 to $75. Keep the shipping fee at $7.95.
-> Compare panel contribution over three shopping cycles.
+> Option A: free shipping over $50, otherwise $7.95.
+> Option B: free shipping over $75, otherwise $3.95.
 
-The default review also includes a $100 threshold option. These policy values are
-**assumptions**, not historical AdventureWorks policy. Plain-text preparation is
-template-assisted and limited to shipping policies; inspect the normalized fields rather
-than assuming arbitrary business prose was understood.
+The inline card shows the two interpreted options before inference starts. These policy
+values are **assumptions**, not historical AdventureWorks policy. Conversational
+interpretation uses a bounded shipping-policy grammar, not a general-purpose chat model.
+Unsupported policy types are rejected instead of silently converted to a shipping
+simulation. The interface is a local Copilot-style prototype, not a deployed M365 app.
 
 ## What the results mean
 
-The default panel is 12 sample customers, two operational employees, one supplier, and
-one reseller, subject to actual eligible source coverage. Counts are configurable.
+The conversation uses a preset sample panel and three rounds; the actual people and
+counts appear in the inline card. The advanced workbench defaults to 12 sample
+customers, two operational employees, one supplier and one reseller, with configurable
+counts subject to eligible source coverage.
 Results are unweighted panel transactions, not full-company estimates.
 
 A **shopping cycle** is one modeled purchase opportunity per eligible customer, not a
@@ -74,7 +83,10 @@ contribution = product revenue + shipping revenue
              - cost of goods sold - shipping cost - incremental labor cost
 ```
 
-Contribution is not net profit. Missing material costs remain unknown and block a
+Contribution is not net profit. The conversational path fills missing fulfillment and
+labor costs with clearly labeled exploratory presets ($5 per order and $24 per hour).
+These are not observed business facts or user-reviewed values. The advanced workbench
+and existing draft API still preserve unknown costs; unknown material costs block a
 financial recommendation. Sentiment and narratives never alter the ledger. Operational
 actions have role-specific limits, and replenishment cannot arrive before its lead time.
 
@@ -142,6 +154,7 @@ The browser obtains a token from `GET /api/session` and sends `X-Simulation-Toke
 
 | Route | Purpose |
 | --- | --- |
+| `POST /api/experiments/conversation` | Interpret two shipping options from `{decisionText}` with labeled automatic presets |
 | `POST /api/experiments/draft` | Prepare reviewable shipping inputs |
 | `POST /api/experiments` | Save an immutable validated version |
 | `GET /api/experiments` | History |
