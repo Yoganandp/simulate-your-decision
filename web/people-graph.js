@@ -192,6 +192,46 @@ function graphTopology(bundle, actors, run, selection) {
   return { nodes: [...nodes.values()], edges };
 }
 
+// The original network's radial seed, repulsion and damping, settled once rather than on every frame.
+export function layoutStakeholderNetwork(actors) {
+  const rings = { leadership: 90, management: 165, frontline: 235, supplier: 285, reseller: 305, customer: 340 };
+  const sizes = { leadership: 17, management: 13, frontline: 10, supplier: 11, reseller: 10, customer: 7 };
+  const hash = value => [...value].reduce((n, char) => (Math.imul(n, 31) + char.charCodeAt(0)) >>> 0, 7);
+  const groups = new Map();
+  for (const actor of [...actors].sort((a, b) => a.id.localeCompare(b.id))) {
+    const group = stakeholderGroup(actor);
+    if (!groups.has(group)) groups.set(group, []);
+    groups.get(group).push(actor);
+  }
+  const nodes = [];
+  for (const [group, members] of groups) members.forEach((actor, index) => {
+    const radius = rings[group] || 275;
+    const angle = index / members.length * Math.PI * 2 + hash(group || 'model') / 0xffffffff * Math.PI * 2;
+    const distance = radius + hash(actor.id) % 25 - 12;
+    nodes.push({ id: actor.id, x: Math.cos(angle) * distance, y: Math.sin(angle) * distance,
+      vx: 0, vy: 0, radius, size: sizes[group] || 12 });
+  });
+  let alpha = 0.9;
+  for (let tick = 0; tick < 180; tick++) {
+    for (let i = 0; i < nodes.length; i++) for (let j = i + 1; j < nodes.length; j++) {
+      const a = nodes[i], b = nodes[j];
+      const dx = a.x - b.x || 0.01, dy = a.y - b.y || 0.01, distance = Math.hypot(dx, dy);
+      const force = ((a.size + b.size) * 90 / (distance * distance) + Math.max(0, 52 - distance) * 0.12) * alpha;
+      a.vx += dx / distance * force; a.vy += dy / distance * force;
+      b.vx -= dx / distance * force; b.vy -= dy / distance * force;
+    }
+    for (const node of nodes) {
+      const distance = Math.hypot(node.x, node.y) || 1;
+      const force = (node.radius - distance) * 0.035 * alpha;
+      node.vx = (node.vx + node.x / distance * force) * 0.86;
+      node.vy = (node.vy + node.y / distance * force) * 0.86;
+      node.x += node.vx; node.y += node.vy;
+    }
+    alpha = Math.max(0, alpha * 0.985 - 0.0006);
+  }
+  return new Map(nodes.map(({ id, x, y, size }) => [id, { x, y, size }]));
+}
+
 let instanceSequence = 0;
 
 export function createPeopleGraph(root, { onInspect } = {}) {
@@ -228,7 +268,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   timeline.append(rounds, summary);
   const heading = html('div', 'pg-map-heading');
   const headingCopy = html('div');
-  headingCopy.append(html('span', 'pg-eyebrow', 'BUSINESS PERSPECTIVES'), html('h3', '', 'One business. Every point of view.'));
+  headingCopy.append(html('h3', '', 'Stakeholder network'));
   const resource = html('span', 'pg-resource');
   heading.append(headingCopy, resource);
   const filters = html('div', 'pg-filters');
@@ -243,18 +283,21 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   const zoomTools = html('div', 'pg-zoom');
   const zoomOut = button('pg-zoom-out', '−'), zoomIn = button('pg-zoom-in', '+'), zoomReset = button('pg-zoom-reset', '100%');
   zoomOut.setAttribute('aria-label', 'Zoom out'); zoomIn.setAttribute('aria-label', 'Zoom in');
-  zoomReset.setAttribute('aria-label', 'Reset graph zoom');
+  zoomReset.setAttribute('aria-label', 'Reset graph view');
   zoomTools.append(zoomOut, zoomReset, zoomIn);
-  filters.append(search, stateFilter, zoomTools);
+  filters.append(search, stateFilter);
   const groupFilters = html('div', 'pg-group-filters');
   groupFilters.setAttribute('role', 'group'); groupFilters.setAttribute('aria-label', 'Stakeholder perspectives');
   const visibleSummary = html('span', 'pg-visible-summary');
   visibleSummary.setAttribute('role', 'status');
   const stage = html('div', 'pg-stage'), viewport = html('div', 'pg-viewport');
-  const canvas = svg('svg', { class: 'pg-canvas', role: 'group', 'aria-label': 'Simulated people, grouped by role' });
-  const groupsLayer = svg('g', { class: 'pg-groups', 'aria-hidden': 'true' });
+  const canvas = svg('svg', { class: 'pg-canvas', role: 'group', 'aria-label': 'Sample business stakeholder network' });
+  const guidesLayer = svg('g', { class: 'pg-membership', 'aria-hidden': 'true' });
   const edgesLayer = svg('g', { class: 'pg-edges' }), nodesLayer = svg('g', { class: 'pg-nodes' });
-  canvas.append(groupsLayer, edgesLayer, nodesLayer); viewport.append(canvas);
+  const businessHub = svg('g', { class: 'pg-business-hub', role: 'img', 'aria-label': 'Sample business membership, not influence' });
+  const hubLabel = svg('text', { y: 5, 'text-anchor': 'middle' }); hubLabel.textContent = 'HQ';
+  businessHub.append(svg('rect', { x: -27, y: -18, width: 54, height: 36, rx: 10 }), hubLabel);
+  canvas.append(guidesLayer, edgesLayer, nodesLayer, businessHub); viewport.append(canvas);
   const empty = html('div', 'pg-empty');
   empty.append(html('span', 'pg-empty-mark', '◌'), html('strong', '', 'Your people, in perspective'),
     html('p', '', 'Describe your options to prepare the sample panel. Live decisions will appear here when you run it.'));
@@ -273,35 +316,43 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   const explanation = html('p', 'pg-popup-explanation'), note = html('p', 'pg-popup-note');
   const inspect = button('pg-inspect', 'View decision details ↗');
   popup.append(popupTop, popupTitle, source, context, status, facts, explanationLabel, explanation, note, inspect);
-  stage.append(viewport, empty, noMatches, popup);
+  const hint = html('span', 'pg-pan-hint', 'Drag to pan · Select a person to explore');
+  stage.append(viewport, zoomTools, hint, empty, noMatches, popup);
   const footer = html('div', 'pg-footer'), legend = html('div', 'pg-legend');
-  for (const [state, label] of [['idle', 'Waiting'], ['running', 'In progress'], ['ready', 'Response ready'], ['committed', 'Committed'], ['neutral', 'No action']]) {
+  for (const [state, label] of [['idle', 'Waiting'], ['running', 'In progress'], ['ready', 'Response ready'], ['committed', 'Saved action'], ['neutral', 'No action'], ['constrained', 'Order blocked']]) {
     const item = html('span', 'pg-legend-item', label); item.dataset.state = state; legend.append(item);
   }
   const connectionNote = html('p', 'pg-connection-note');
   footer.append(legend, visibleSummary, connectionNote);
   const navigation = html('div', 'pg-navigation');
   navigation.append(controls, timeline);
-  root.classList.add('people-graph'); root.replaceChildren(heading, navigation, filters, groupFilters, stage, footer);
-  const actorElements = new Map(), hubElements = new Map(), edgeElements = new Map(), groupElements = new Map();
+  const filterDetails = html('details', 'pg-filter-details');
+  filterDetails.append(html('summary', '', 'Find and filter people'), filters, groupFilters);
+  root.classList.add('people-graph'); root.replaceChildren(heading, navigation, filterDetails, stage, footer);
+  const actorElements = new Map(), hubElements = new Map(), edgeElements = new Map();
   const scenarioButtons = new Map(), roundButtons = new Map();
   const groupButtons = new Map();
   let filterGroup = 'all', zoom = 1;
   let input = {}, model = derivePeopleGraphState(), topology = { nodes: [], edges: [] };
   let followLive = true, selected = null, pinned = null, hovered = null, focused = null, shown = null;
   let dismissed = null, hideTimer, resizeFrame, destroyed = false, identity = null, topologyKey = '';
-  let positions = new Map();
+  let positions = new Map(), populationKey = '', scale = 1, dragging = null;
+  let pan = { x: 0, y: 0 };
 
   function setFollowing(value) {
     followLive = value;
     follow.setAttribute('aria-pressed', String(value));
-    follow.title = value ? 'Live selection follows persisted scenario and round events' : 'Resume following the current scenario and round';
-    text(follow, value ? 'Following live' : 'Follow live');
+    const stopped = STOPPED.has(model.runStatus);
+    follow.title = stopped ? 'Show the last recorded option and round'
+      : value ? 'Live selection follows persisted scenario and round events' : 'Resume following the current scenario and round';
+    text(follow, stopped ? value ? 'Latest round' : 'Go to latest round'
+      : input.run && value ? 'Following live' : 'Follow live');
   }
 
   function closePopup() {
     dismissed = shown; pinned = null; hovered = null;
     popup.hidden = true;
+    stage.classList.remove('has-inspector');
     for (const element of actorElements.values()) {
       element.node.removeAttribute('aria-describedby');
       element.node.setAttribute('aria-expanded', 'false');
@@ -311,28 +362,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   }
 
   function positionPopup() {
-    if (popup.hidden || !shown) return;
-    const anchor = actorElements.get(shown)?.node;
-    if (!anchor) return;
-    const bounds = stage.getBoundingClientRect(), rect = anchor.getBoundingClientRect();
-    popup.style.maxHeight = '';
-    const width = popup.offsetWidth, gap = 10;
-    let left = rect.right - bounds.left + gap;
-    let top = rect.top - bounds.top - 8;
-    if (left + width > bounds.width - 8) {
-      left = rect.left - bounds.left - width - gap;
-      if (left < 8) {
-        const below = bounds.height - (rect.bottom - bounds.top) - gap - 8;
-        const above = rect.top - bounds.top - gap - 8;
-        const placeBelow = below >= 160 || below >= above;
-        const available = Math.max(120, placeBelow ? below : above);
-        popup.style.maxHeight = `${Math.min(bounds.height - 16, available)}px`;
-        top = placeBelow ? rect.bottom - bounds.top + gap : rect.top - bounds.top - gap - popup.offsetHeight;
-      }
-    }
-    left = Math.max(8, Math.min(left, bounds.width - width - 8));
-    top = Math.max(8, Math.min(top, bounds.height - popup.offsetHeight - 8));
-    popup.style.left = `${left}px`; popup.style.top = `${top}px`;
+    stage.classList.toggle('has-inspector', !popup.hidden);
   }
 
   function updatePopup(preferredActor) {
@@ -352,7 +382,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     text(context, `${scenario?.label || 'Prepared option'} · Round ${model.selected.round}`);
     text(status, data.statusLabel); text(facts, data.facts.join(' · ')); facts.hidden = !data.facts.length;
     explanationLabel.hidden = explanation.hidden = !data.explanation;
-    text(explanation, data.explanation.length > 300 ? `${data.explanation.slice(0, 297)}…` : data.explanation);
+    text(explanation, data.explanation);
     text(note, data.note);
     inspect.hidden = typeof onInspect !== 'function';
     for (const [key, element] of actorElements) {
@@ -379,14 +409,12 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     const hit = svg('rect', { class: 'pg-node-hit', x: -28, y: -28, width: 56, height: 56, 'aria-hidden': 'true' });
     const halo = svg('circle', { class: 'pg-node-halo', r: 28, 'aria-hidden': 'true' });
     const face = svg('circle', { class: 'pg-node-face', r: 22, 'aria-hidden': 'true' });
-    const monogram = svg('text', { class: 'pg-monogram', y: 5, 'text-anchor': 'middle', 'aria-hidden': 'true' });
-    monogram.textContent = data.label.split(/\s+/).slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase();
-    const badge = svg('circle', { class: 'pg-node-badge', cx: 17, cy: 16, r: 7, 'aria-hidden': 'true' });
-    const badgeMark = svg('text', { class: 'pg-node-badge-mark', x: 17, y: 19.5, 'text-anchor': 'middle', 'aria-hidden': 'true' });
     const label = svg('text', { class: 'pg-node-label', y: 38, 'text-anchor': 'middle', 'aria-hidden': 'true' });
-    node.append(hit, halo, face, monogram, badge, badgeMark, label);
+    const guide = svg('path', { 'data-relationship': 'sample-membership' });
+    guidesLayer.append(guide);
+    node.append(hit, halo, face, label);
     nodesLayer.append(node);
-    return { node, label, badgeMark, monogram };
+    return { node, label, hit, halo, face, guide };
   }
 
   function syncControls() {
@@ -421,9 +449,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     controls.hidden = timeline.hidden = !model.scenarios.length;
     follow.disabled = !input.run;
     follow.hidden = !input.run;
-    text(follow, STOPPED.has(model.runStatus)
-      ? followLive ? 'Latest round' : 'Go to latest round'
-      : input.run && followLive ? 'Following live' : 'Follow live');
+    setFollowing(followLive);
     const completion = model.nodes.length ? `${model.committed}/${model.nodes.length} committed` : 'No panel';
     const stoppedLabel = { completed: 'Complete', complete: 'Complete', cancelled: 'Cancelled', failed: 'Failed', paused: 'Paused', interrupted: 'Interrupted' }[model.runStatus];
     text(summary, !input.run ? 'Prepared · no decisions yet' : `${completion}${model.active ? ` · ${model.active} in progress` : ''}${stoppedLabel ? ` · ${stoppedLabel}` : ''}`);
@@ -460,95 +486,48 @@ export function createPeopleGraph(root, { onInspect } = {}) {
 
   function layout() {
     if (destroyed) return;
-    if (!topology.nodes.length) {
-      for (const element of groupElements.values()) element.node.remove();
-      groupElements.clear();
-      return;
-    }
+    businessHub.toggleAttribute('hidden', !model.nodes.length);
+    if (!topology.nodes.length) return;
     const width = Math.max(280, Math.round(viewport.clientWidth || root.clientWidth || 760));
-    const minHeight = Math.max(350, viewport.clientHeight || 390) / zoom;
-    const logicalWidth = width / Math.min(zoom, 1);
+    const height = Math.max(350, viewport.clientHeight || 480);
+    const nextPopulationKey = JSON.stringify(topology.nodes.map(node => [node.id, stakeholderGroup(node)]));
+    if (nextPopulationKey !== populationKey) {
+      positions = layoutStakeholderNetwork(topology.nodes);
+      populationKey = nextPopulationKey;
+      pan = { x: 0, y: 0 };
+    }
+    const extent = Math.max(200, ...[...positions.values()].map(point => Math.max(Math.abs(point.x), Math.abs(point.y)) + 48));
+    scale = Math.min(width, height) / (extent * 2) * zoom;
+    const worldWidth = width / scale, worldHeight = height / scale;
+    canvas.setAttribute('viewBox', `${pan.x - worldWidth / 2} ${pan.y - worldHeight / 2} ${worldWidth} ${worldHeight}`);
     const visible = new Set(model.nodes.filter(matches).map(node => node.actorId));
     for (const [key, element] of actorElements) {
       element.node.toggleAttribute('hidden', !visible.has(key));
+      element.guide.toggleAttribute('hidden', !visible.has(key));
       element.node.tabIndex = visible.has(key) ? 0 : -1;
+      const point = positions.get(key);
+      element.node.setAttribute('transform', `translate(${point.x},${point.y})`);
+      element.guide.setAttribute('d', `M0 0 L${point.x} ${point.y}`);
+      element.face.setAttribute('r', point.size);
+      element.halo.setAttribute('r', point.size + 6);
+      element.label.setAttribute('y', point.size + 17);
+      const hit = Math.max(44 / scale, point.size * 2 + 8);
+      for (const axis of ['x', 'y']) element.hit.setAttribute(axis, -hit / 2);
+      for (const dimension of ['width', 'height']) element.hit.setAttribute(dimension, hit);
     }
     if (shown && !visible.has(shown)) closePopup();
     noMatches.hidden = !model.nodes.length || visible.size > 0;
     text(visibleSummary, `${visible.size} of ${model.nodes.length} stakeholders in view`);
-    const groups = [...STAKEHOLDER_GROUPS.map(group => ({ role: group.id, label: group.label, color: group.role,
-      nodes: topology.nodes.filter(node => node.actor && visible.has(node.id) && stakeholderGroup(node) === group.id) })),
-    { role: 'model', label: 'Modeled entities', color: 'person', nodes: topology.nodes.filter(node => !node.actor) }]
-      .filter(group => group.nodes.length);
-    const wide = logicalWidth >= 760, gap = 18, inset = 20;
-    const customer = groups.find(group => group.role === 'customer'), others = groups.filter(group => group !== customer);
-    let height = minHeight, y = inset;
-    const boxes = [];
-    const columnsFor = (count, boxWidth) => Math.max(1, Math.min(count, Math.floor((boxWidth - 28) / 64)));
-    const groupHeight = (group, boxWidth) => {
-      const columns = columnsFor(group.nodes.length, boxWidth);
-      return 56 + Math.ceil(group.nodes.length / columns) * 72;
-    };
-    if (wide && customer && others.length) {
-      const leftWidth = Math.floor((logicalWidth - inset * 2 - gap) * 0.48);
-      const rightWidth = logicalWidth - inset * 2 - gap - leftWidth;
-      const columns = rightWidth >= 470 ? 2 : 1;
-      const boxWidth = (rightWidth - (columns - 1) * gap) / columns;
-      const bottoms = Array(columns).fill(inset);
-      others.forEach(group => {
-        const column = bottoms.indexOf(Math.min(...bottoms));
-        const boxHeight = groupHeight(group, boxWidth);
-        boxes.push({ ...group, x: inset + leftWidth + gap + column * (boxWidth + gap), y: bottoms[column], width: boxWidth, height: boxHeight });
-        bottoms[column] += boxHeight + gap;
-      });
-      height = Math.max(minHeight, groupHeight(customer, leftWidth) + inset * 2, Math.max(...bottoms) - gap + inset);
-      boxes.unshift({ ...customer, x: inset, y: inset, width: leftWidth, height: height - inset * 2 });
-    } else {
-      for (const group of groups) {
-        const boxHeight = groupHeight(group, logicalWidth - inset * 2);
-        boxes.push({ ...group, x: inset, y, width: logicalWidth - inset * 2, height: boxHeight });
-        y += boxHeight + gap;
-      }
-      height = Math.max(minHeight, y - gap + inset);
-    }
-    canvas.setAttribute('viewBox', `0 0 ${logicalWidth} ${height}`);
-    canvas.style.width = `${logicalWidth * zoom}px`;
-    canvas.style.height = `${height * zoom}px`;
-    positions = new Map();
-    const roles = new Set(boxes.map(box => box.role));
-    for (const [role, element] of groupElements) if (!roles.has(role)) { element.node.remove(); groupElements.delete(role); }
-    for (const box of boxes) {
-      let group = groupElements.get(box.role);
-      if (!group) {
-        const node = svg('g', { class: 'pg-cluster', 'data-role': box.color, 'data-group': box.role });
-        const background = svg('rect', { rx: 22 }), label = svg('text', { class: 'pg-cluster-label' });
-        const progress = svg('text', { class: 'pg-cluster-progress' });
-        node.append(background, label, progress); groupsLayer.append(node);
-        group = { node, background, label, progress }; groupElements.set(box.role, group);
-      }
-      for (const key of ['x', 'y', 'width', 'height']) group.background.setAttribute(key, box[key]);
-      group.label.setAttribute('x', box.x + 18); group.label.setAttribute('y', box.y + 26);
-      text(group.label, `${box.label} · ${box.nodes.length}`);
-      group.progress.setAttribute('x', box.x + 18); group.progress.setAttribute('y', box.y + 43);
-      const committed = model.nodes.filter(node => node.group === box.role && visible.has(node.actorId) && node.committed).length;
-      text(group.progress, input.run ? `${committed} saved decisions in this round` : 'Sample records · ready to explore');
-      const columns = columnsFor(box.nodes.length, box.width);
-      const rows = Math.ceil(box.nodes.length / columns);
-      const rowHeight = (box.height - 56) / rows;
-      box.nodes.forEach((node, index) => {
-        const row = Math.floor(index / columns), rowCount = Math.min(columns, box.nodes.length - row * columns);
-        const x = box.x + box.width / 2 + (index % columns - (rowCount - 1) / 2) * Math.min(90, (box.width - 28) / columns);
-        const py = box.y + 56 + rowHeight * row + rowHeight / 2 - 8;
-        positions.set(node.id, { x, y: py });
-        const element = node.actor ? actorElements.get(node.id)?.node : hubElements.get(node.id);
-        element?.setAttribute('transform', `translate(${x},${py})`);
-      });
+    for (const [key, element] of hubElements) {
+      const point = positions.get(key);
+      element.setAttribute('transform', `translate(${point.x},${point.y})`);
     }
     for (const edge of topology.edges) {
       const from = positions.get(edge.from), to = positions.get(edge.to), element = edgeElements.get(edge.id);
-      element?.toggleAttribute('hidden', !from || !to);
+      const shown = endpoint => !actorElements.has(endpoint) || visible.has(endpoint);
+      element?.toggleAttribute('hidden', !from || !to || !shown(edge.from) || !shown(edge.to));
       if (!from || !to || !element) continue;
-      element.setAttribute('d', `M${from.x},${from.y} Q${(from.x + to.x) / 2},${Math.min(from.y, to.y) - 24} ${to.x},${to.y}`);
+      element.setAttribute('d', `M${from.x},${from.y} L${to.x},${to.y}`);
     }
     positionPopup();
   }
@@ -559,7 +538,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     selected = { ...model.selected };
     syncControls();
     const actorIds = new Set(model.nodes.map(node => node.actorId));
-    for (const [key, element] of actorElements) if (!actorIds.has(key)) { element.node.remove(); actorElements.delete(key); }
+    for (const [key, element] of actorElements) if (!actorIds.has(key)) { element.node.remove(); element.guide.remove(); actorElements.delete(key); }
     for (const data of model.nodes) {
       let element = actorElements.get(data.actorId);
       if (!element) { element = buildActor(data); actorElements.set(data.actorId, element); }
@@ -567,11 +546,8 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       element.node.dataset.group = data.group;
       element.node.dataset.state = data.state; element.node.dataset.active = String(data.active);
       text(element.label, data.label.length > 15 ? `${data.label.slice(0, 14)}…` : data.label);
-      text(element.monogram, data.label.split(/\s+/).slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase());
       const scenario = model.scenarios.find(item => item.scenarioId === model.selected.scenarioId);
       element.node.setAttribute('aria-label', `${data.label}. ${data.sourceLabel}. ${data.statusLabel}. ${scenario?.label || 'Prepared option'}, round ${model.selected.round}. Press Enter to pin details.`);
-      text(element.badgeMark, data.committed ? data.state === 'neutral' ? '−' : data.state === 'constrained' ? '!' : '✓'
-        : data.state === 'failed' || data.state === 'cancelled' ? '×' : data.state === 'ready' ? '·' : '');
     }
     empty.hidden = Boolean(model.nodes.length);
     legend.hidden = !model.nodes.length;
@@ -599,13 +575,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       }
       layout();
     }
-    for (const [groupId, group] of groupElements) {
-      const visibleNodes = model.nodes.filter(node => node.group === groupId && matches(node));
-      text(group.progress, input.run ? `${visibleNodes.filter(node => node.committed).length} saved decisions in this round` : 'Sample records · ready to explore');
-    }
-    text(connectionNote, topology.edges.length
-      ? 'Lines show saved operational requests or declared model relationships, not inferred social influence.'
-      : 'Grouped by source role, not a social network. Connections appear only for saved operational requests. Sampled perspectives, not a whole-company forecast.');
+    text(connectionNote, 'Dotted spokes show sample-business membership, not influence. Solid lines show saved requests or declared model relationships. Colors describe decisions, not sentiment.');
     updatePopup();
   }
 
@@ -616,6 +586,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       setFollowing(!followLive); if (followLive) { pinned = null; dismissed = null; } render();
     } else if (target === zoomIn || target === zoomOut || target === zoomReset) {
       zoom = target === zoomReset ? 1 : Math.max(0.8, Math.min(1.6, Math.round((zoom + (target === zoomIn ? 0.2 : -0.2)) * 10) / 10));
+      if (target === zoomReset) pan = { x: 0, y: 0 };
       text(zoomReset, `${Math.round(zoom * 100)}%`);
       zoomOut.disabled = zoom <= 0.8; zoomIn.disabled = zoom >= 1.6;
       layout();
@@ -653,7 +624,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     }
   }, listeners);
   root.addEventListener('pointerover', event => {
-    if (event.pointerType === 'touch') return;
+    if (event.pointerType === 'touch' || dragging || win.matchMedia('(max-width: 680px)').matches) return;
     const node = event.target.closest('[data-actor-id]');
     if (node && !node.contains(event.relatedTarget)) {
       hovered = node.dataset.actorId; dismissed = null; clearTimeout(hideTimer); updatePopup();
@@ -668,6 +639,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   root.addEventListener('focusin', event => {
     const node = event.target.closest('[data-actor-id]');
     if (node) {
+      if (win.matchMedia('(max-width: 680px)').matches && !node.matches(':focus-visible')) return;
       if (focused !== node.dataset.actorId) dismissed = null;
       focused = node.dataset.actorId; updatePopup(focused);
     }
@@ -680,6 +652,21 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     }
   }, listeners);
   viewport.addEventListener('scroll', positionPopup, { ...listeners, passive: true });
+  viewport.addEventListener('pointerdown', event => {
+    if (event.button !== 0 || event.target.closest('[data-actor-id]')) return;
+    dragging = { x: event.clientX, y: event.clientY, pan: { ...pan } };
+    viewport.setPointerCapture(event.pointerId);
+    viewport.classList.add('is-panning');
+  }, listeners);
+  viewport.addEventListener('pointermove', event => {
+    if (!dragging) return;
+    pan = { x: dragging.pan.x - (event.clientX - dragging.x) / scale, y: dragging.pan.y - (event.clientY - dragging.y) / scale };
+    layout();
+  }, listeners);
+  const endPan = () => { dragging = null; viewport.classList.remove('is-panning'); };
+  viewport.addEventListener('pointerup', endPan, listeners);
+  viewport.addEventListener('pointercancel', endPan, listeners);
+  viewport.addEventListener('lostpointercapture', endPan, listeners);
   const resize = () => {
     win.cancelAnimationFrame(resizeFrame);
     resizeFrame = win.requestAnimationFrame(() => { layout(); positionPopup(); });

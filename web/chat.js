@@ -1,5 +1,5 @@
 import { createPeopleGraph } from './people-graph.js';
-import { BUSINESS_SECTIONS, businessInsights } from './business-insights.js';
+import { BUSINESS_SECTIONS, businessInsights, businessHighlights } from './business-insights.js';
 
 const $ = (id) => document.getElementById(id);
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'paused']);
@@ -19,6 +19,7 @@ let tokenRequest;
 let restoreFocus;
 let cardPlaceholder;
 let previousScroll = 0;
+let outcomeKey = '';
 const inertElements = new Map();
 const graph = createPeopleGraph($('people-graph'), { onInspect: inspectActor });
 
@@ -216,7 +217,8 @@ function renderBundle() {
     ? 'Two options. A business of perspectives.' : 'Your options. A business of perspectives.';
   const planned = inputs.actors.length * definition.scenarios.length * definition.horizon.steps;
   $('runtime-plan').textContent = `${planned} planned actor calls · maximum ${definition.runConfig.concurrency} at a time · ${definition.horizon.steps} rounds per option. `
-    + `${definition.runConfig.attemptCap} total attempts including repairs; ${Math.round(definition.runConfig.deadlineMs / 60000)}-minute hard stop, not an ETA. Starts only on request.`;
+    + `${definition.runConfig.attemptCap} total attempts including repairs; ${Math.round(definition.runConfig.deadlineMs / 60000)}-minute hard stop, not an ETA. Starts only on request.`
+    + (planned >= 300 && definition.runConfig.concurrency <= 2 ? ' This full panel can take an hour or more. Recent simulations opens saved work without new model calls.' : '');
   $('simulation-options').replaceChildren();
   definition.scenarios.forEach((scenario, index) => {
     const card = element('article', null, 'option-card');
@@ -490,6 +492,11 @@ function metric(result, name) { return result?.metrics?.find((item) => item.metr
 
 function renderOutcomes() {
   if (!state.bundle) return;
+  const nextKey = JSON.stringify([state.bundle.definition.experimentId, state.bundle.definition.version,
+    state.run?.runId, state.run?.status, state.run?.comparison,
+    state.run?.results?.map(result => [result.stateHash, result.completedRounds, result.complete, result.metrics])]);
+  if (outcomeKey === nextKey) return;
+  outcomeKey = nextKey;
   const comparison = state.run?.comparison;
   const complete = isComplete();
   const objective = state.bundle.definition.objective;
@@ -502,28 +509,23 @@ function renderOutcomes() {
       : winner ? `${winner.label} leads on ${objectiveLabel} (${objective.direction === 'minimize' ? 'lower' : 'higher'} is better). Treat this as a hypothesis to pilot, not a forecast.`
         : comparison.status === 'more_information_needed' ? 'The rounds are complete, but missing inputs prevent a supported recommendation.'
           : 'There is no clear winner. Compare the trade-offs before choosing a pilot.';
+  $('outcome-summary').dataset.kind = winner ? 'complete' : 'pending';
   $('outcome-cards').replaceChildren();
   for (const scenario of state.bundle.definition.scenarios) {
     const result = state.run?.results?.find((item) => item.scenarioId === scenario.scenarioId);
     const contribution = metric(result, 'contribution');
+    const hasContribution = Number.isFinite(contribution?.value);
     const card = element('article', null, 'outcome-card');
     card.append(element('h3', scenario.label));
-    const amount = actionButton(contribution ? money(contribution.value) : 'Not yet available', () => inspectMetric(scenario.scenarioId, 'contribution'), 'outcome-value');
-    amount.disabled = !contribution;
-    amount.setAttribute('aria-label', `${scenario.label} simulated contribution: ${contribution ? money(contribution.value) : 'not yet available'}. View supporting events.`);
+    const amount = actionButton(hasContribution ? money(contribution.value) : 'Not available', () => inspectMetric(scenario.scenarioId, 'contribution'), 'outcome-value');
+    amount.disabled = !hasContribution;
+    amount.setAttribute('aria-label', `${scenario.label} simulated contribution: ${hasContribution ? money(contribution.value) : 'not available'}. View supporting events.`);
     card.append(amount, element('p', 'Simulated panel contribution', 'outcome-label'));
-    const values = element('div', null, 'outcome-meta');
-    for (const [key, label] of [['purchases', 'purchases'], ['abandonments', 'abandoned baskets'], ['stockouts', 'stockouts']]) {
-      const item = metric(result, key);
-      const button = actionButton(`${item?.value ?? '-'} ${label}`, () => inspectMetric(scenario.scenarioId, key), 'chat-link');
-      button.disabled = !item;
-      values.append(button);
-    }
-    card.append(values, element('p', `${result?.completedRounds || 0} / ${state.bundle.definition.horizon.steps} rounds${result?.complete ? ' complete' : ' saved - interim'}`, 'source-note'));
+    card.append(element('p', `${result?.completedRounds || 0} / ${state.bundle.definition.horizon.steps} rounds${result?.complete ? ' complete' : ' saved - interim'}`, 'source-note'));
     $('outcome-cards').append(card);
   }
   renderBusinessImpact(complete);
-  $('outcome-notes').textContent = 'Business-wide perspectives from a bounded, unweighted sample—not whole-company estimates. Contribution is not net profit. Morale, satisfaction, churn, overhead and tax are not modeled. Source job titles organize the view; all employee groups retain the same limited shipping-adapter authority.';
+  $('outcome-notes').textContent = 'Sample-panel results, not a company forecast. Contribution is not net profit. Sentiment, morale and churn are not modeled.';
 }
 
 function formatImpact(value, unit) {
@@ -536,9 +538,45 @@ function formatImpact(value, unit) {
 function renderBusinessImpact(complete) {
   const insights = businessInsights(state.bundle, state.run?.results || []);
   const root = $('business-impact');
+  const openSections = new Set([...root.querySelectorAll('details[open]')].map(details => details.dataset.section));
+  const focusSection = root.contains(document.activeElement) ? document.activeElement.closest('details')?.dataset.section : null;
   root.replaceChildren();
+  const more = (id, title) => {
+    const details = element('details', null, 'outcome-details');
+    details.dataset.section = id; details.open = openSections.has(id);
+    details.append(element('summary', title));
+    root.append(details);
+    return details;
+  };
+  root.append(element('p', insights.scenarios.length === 2
+    ? `What changes from ${insights.scenarios[0].label} to ${insights.scenarios[1].label}`
+    : 'Compare the saved business outcomes', 'business-kpi-heading'));
+  const highlights = element('div', null, 'business-kpis');
+  for (const item of businessHighlights(insights, complete)) {
+    const card = element('article', null, `business-kpi ${item.tone}`);
+    card.dataset.metricId = item.id;
+    const change = item.delta === null ? 'Not compared yet'
+      : `${item.delta > 0 ? '+' : ''}${formatImpact(item.delta, item.unit)}`;
+    card.append(element('h3', item.label), element('strong', change, 'business-kpi-change'));
+    const values = element('div', null, 'business-kpi-values');
+    for (const value of item.values) {
+      const button = actionButton(`${value.scenarioLabel}: ${value.available ? formatImpact(value.value, item.unit) : 'Pending'}`,
+        () => inspectBusinessOutcome(value.scenarioId, value), 'business-value');
+      button.disabled = !value.available || value.value === null;
+      button.setAttribute('aria-label', `${value.scenarioLabel}, ${item.label}: ${value.available ? formatImpact(value.value, item.unit) : 'pending'}. Inspect evidence.`);
+      values.append(button);
+    }
+    card.append(values); highlights.append(card);
+  }
+  root.append(highlights, element('p', complete
+    ? 'Changes are B minus A. Colors describe individual metrics, not an overall recommendation. Select a value to see its evidence.'
+    : 'Only saved rounds are shown. Differences and a winner stay unavailable until both options finish.', 'business-kpi-note'));
+  const moneyDetails = more('money', 'The money and operational trade-offs');
+  const roundDetails = more('rounds', 'Round-by-round changes');
+  const responseDetails = more('responses', 'Who responded and what they did');
+  const sampleDetails = more('sample', 'Sample coverage and modeling limits');
   const coverage = element('section', null, 'business-coverage');
-  coverage.append(element('span', 'WHO IS IN THE ROOM', 'business-eyebrow'), element('h3', 'Breadth without pretending to be the whole business'));
+  coverage.append(element('h3', 'Who is in the sample'));
   const groups = element('div', null, 'business-perspectives');
   for (const group of insights.groups) {
     const item = element('div');
@@ -551,8 +589,9 @@ function renderBusinessImpact(complete) {
       `${titleCase(role)}: ${counts.selected} of ${counts.eligible.toLocaleString()} eligible records (${counts.source.toLocaleString()} source rows)`).join(' · ');
     coverage.append(element('p', description, 'source-note'));
   } else coverage.append(element('p', 'This saved snapshot does not record full source-population coverage; no population estimate is inferred.', 'source-note'));
-  root.append(coverage);
-  renderRoundTrend(root, insights);
+  coverage.append(element('p', 'No population weighting or annualization. Employee job titles organize the view but do not add authority to the shipping model. Satisfaction, morale, churn, overhead and tax are not modeled.', 'source-note'));
+  sampleDetails.append(coverage);
+  renderRoundTrend(roundDetails, insights);
 
   const panels = element('div', null, 'business-panels');
   for (const section of BUSINESS_SECTIONS) {
@@ -588,7 +627,7 @@ function renderBusinessImpact(complete) {
     }
     table.append(body); scroll.append(table); panel.append(scroll); panels.append(panel);
   }
-  root.append(panels, element('p', 'B − A compares complete, matched options only. A positive difference is not necessarily an improvement. Click any saved value to inspect its evidence.', 'source-note'));
+  moneyDetails.append(panels, element('p', 'B − A compares complete, matched options only. A positive difference is not necessarily an improvement. Click any saved value to inspect its evidence.', 'source-note'));
   const responses = element('section', null, 'business-coverage');
   responses.append(element('h3', 'How each part of the business responded'),
     element('p', 'Action counts, not sentiment scores. “Took an action” includes purchases, deferrals, abandonments and operational choices; it does not mean approval.', 'source-note'));
@@ -606,7 +645,8 @@ function renderBusinessImpact(complete) {
     }
     roster.append(item);
   }
-  responses.append(roster); root.append(responses);
+  responses.append(roster); responseDetails.append(responses);
+  if (focusSection) root.querySelector(`details[data-section="${CSS.escape(focusSection)}"] > summary`)?.focus({ preventScroll: true });
 }
 
 function renderRoundTrend(root, insights) {

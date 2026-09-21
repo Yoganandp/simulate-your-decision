@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { businessInsights, employeeGroup, stakeholderGroup } from '../web/business-insights.js';
+import { businessInsights, businessHighlights, employeeGroup, stakeholderGroup } from '../web/business-insights.js';
 import { prepareSyntheticFixture } from '../src/sim/domain-definition.mjs';
 import { initialScenarioState, executeRound, calculateMetrics, compareScenarios, replayScenario, stableHash } from '../src/sim/domain.mjs';
 import { validateRunConfig } from '../src/sim/runManager.mjs';
@@ -26,6 +26,35 @@ test('pending results stay unknown, never zero-valued fake outcomes', () => {
   assert.ok(model.scenarios.every(scenario => scenario.rounds.every(round => !round.saved && round.contribution === null)));
   assert.ok(model.scenarios.every(scenario => scenario.groups.every(group => group.committed === 0)));
   assert.equal(model.population, null);
+  assert.ok(businessHighlights(model, true).every(item => item.delta === null && item.tone === 'neutral'));
+});
+
+test('compact outcome cards compare only complete matched options, preserving evidence and metric direction', () => {
+  const model = businessInsights(bundle());
+  model.scenarios.forEach((scenario, index) => {
+    scenario.complete = true;
+    Object.values(scenario.values).forEach(item => {
+      item.value = index ? 20 : 10;
+      item.available = true;
+      item.eventIds = [`saved-${index}`];
+    });
+  });
+  const cards = businessHighlights(model, true);
+  assert.equal(cards.length, 6);
+  assert.equal(cards.find(item => item.id === 'contribution').delta, 10);
+  assert.equal(cards.find(item => item.id === 'contribution').tone, 'improve');
+  assert.equal(cards.find(item => item.id === 'stockouts').tone, 'worsen');
+  assert.equal(cards.find(item => item.id === 'incrementalLaborCost').tone, 'worsen');
+  assert.equal(cards.find(item => item.id === 'unitsArrived').tone, 'neutral');
+  assert.deepEqual(cards[0].values[0].eventIds, ['saved-0']);
+  assert.ok(businessHighlights(model, false).every(item => item.delta === null));
+  model.scenarios[1].complete = false;
+  assert.ok(businessHighlights(model, true).every(item => item.delta === null));
+  model.scenarios[1].complete = true;
+  model.scenarios[1].values.contribution.value = null;
+  assert.equal(businessHighlights(model, true)[0].delta, null);
+  model.scenarios.push(structuredClone(model.scenarios[0]));
+  assert.ok(businessHighlights(model, true).every(item => item.delta === null));
 });
 
 test('business impacts use committed events, distinct people, and actual arrivals only', () => {

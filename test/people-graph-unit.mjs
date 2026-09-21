@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { derivePeopleGraphState } from '../web/people-graph.js';
+import { derivePeopleGraphState, layoutStakeholderNetwork } from '../web/people-graph.js';
 
 // Test-only records never enter the application or its persisted runtime.
 const bundle = {
@@ -263,4 +263,24 @@ test('source-backed display names retain the sample record identity and have a l
   assert.equal(model.nodes[0].sourceLabel, 'Sample customer record 1');
   assert.equal(model.nodes[0].actorId, 'customer-1');
   assert.equal(model.nodes[0].record, null);
+});
+
+test('original-style network settles deterministically without moving people between selections', () => {
+  const actors = Array.from({ length: 63 }, (_, index) => ({
+    id: `person-${String(index).padStart(2, '0')}`,
+    role: index < 32 ? 'customer' : index < 54 ? 'employee' : index < 59 ? 'supplier' : 'reseller',
+    facts: index >= 32 && index < 36 ? [{ field: 'jobTitle', value: 'Director' }]
+      : index >= 36 && index < 43 ? [{ field: 'jobTitle', value: 'Manager' }] : [],
+  }));
+  const before = JSON.stringify(actors), positions = layoutStakeholderNetwork(actors);
+  assert.equal(positions.size, 63);
+  assert.deepEqual(positions, layoutStakeholderNetwork([...actors].reverse()));
+  assert.equal(JSON.stringify(actors), before);
+  for (const point of positions.values()) {
+    assert.ok(Number.isFinite(point.x) && Number.isFinite(point.y));
+    assert.ok(Math.abs(point.x) < 450 && Math.abs(point.y) < 450);
+  }
+  assert.ok(positions.get('person-32').size > positions.get('person-00').size);
+  assert.deepEqual(layoutStakeholderNetwork([]), new Map());
+  assert.ok(layoutStakeholderNetwork([{ id: 'declared-entity' }]).has('declared-entity'));
 });

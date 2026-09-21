@@ -23,13 +23,18 @@ leadership/management/frontline, five suppliers and four resellers. It samples b
 perspectives, not every source record. Two options and three rounds plan 378 actor calls,
 limited to two concurrent requests. The UI discloses the attempt budget and 120-minute
 hard stop (not an ETA). Preparation and exploration make no inference calls.
+This full panel can take an hour or more. Use **Recent simulations** when exploring
+saved work rather than starting another run.
 
-Search the **Business map**, filter groups or response status, zoom, then hover, focus
-or tap a person to inspect saved choices. Switch options and rounds, or follow live
-updates. **Business impact** compares economics, customer behavior, fulfillment,
-workforce actions and supply/partners, plus per-round contribution and response coverage.
+The **Stakeholder network** brings back the original node-and-link view and side
+inspector inside the Copilot canvas. Drag to pan, zoom, then hover, focus or tap a
+person. Open **Find and filter people** to search or filter. Switch options and
+rounds, or follow live updates; node positions stay stable.
+**Results** leads with a summary and compact change cards. Expand the money,
+operational trade-offs, round trends and stakeholder responses when needed.
 Every saved value links to its evidence. Download a decision brief for the same
-cross-business view. Graph links show saved operational requests, not invented social ties.
+cross-business view. Dotted spokes show sample-business membership, not influence;
+solid graph links show saved operational requests or declared model relationships.
 No satisfaction, morale or churn scores are fabricated.
 
 History survives a refresh. Replay uses saved actions without inference; Cancel stops

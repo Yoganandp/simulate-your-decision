@@ -55,6 +55,25 @@ export const BUSINESS_SECTIONS = [
   ] },
 ];
 
+export function businessHighlights(insights, comparable = false) {
+  const definitions = [
+    ['contribution', 'Contribution', 'USD_cents', 1],
+    ['customerOrders', 'Customer orders', 'orders', 1],
+    ['stockouts', 'Orders out of stock', 'opportunities', -1],
+    ['incrementalLaborCost', 'Extra labor cost', 'USD_cents', -1],
+    ['unitsArrived', 'Replenishment arrived', 'units', 0],
+    ['resellerRevenue', 'Reseller revenue', 'USD_cents', 1],
+  ];
+  const matched = comparable && insights.scenarios.length === 2 && insights.scenarios.every(scenario => scenario.complete);
+  return definitions.map(([id, label, unit, direction]) => {
+    const values = insights.scenarios.map(scenario => ({ scenarioId: scenario.scenarioId, scenarioLabel: scenario.label,
+      ...scenario.values[id] }));
+    const delta = matched && values.every(item => Number.isFinite(item.value)) ? values[1].value - values[0].value : null;
+    return { id, label, unit, values, delta,
+      tone: delta === null || delta === 0 || !direction ? 'neutral' : delta * direction > 0 ? 'improve' : 'worsen' };
+  });
+}
+
 const sum = (events, field) => events.some(event => !Number.isFinite(event[field]))
   ? null : events.reduce((total, event) => total + event[field], 0);
 

@@ -44,12 +44,13 @@ proposal, source snapshot, config example, or git commit.
    missing-data presets. No assumption questionnaire or model configuration is required.
 3. Select **Run simulation** in the inline card. Expand it into a full-screen workspace
    without navigating away from the conversation.
-4. Explore the business map, search by record/role/department, filter stakeholder groups
-   or response status, zoom, hover/focus/tap a stakeholder, and select an option
+4. Explore the original-style **Stakeholder network**, drag to pan, zoom,
+   hover/focus/tap a stakeholder to open the side inspector, and select an option
    or round to inspect its saved choices. Only committed rounds contribute to outcomes;
-   a response that is still being validated is not a completed decision.
-5. Compare business impact across finances, customer choices, fulfillment/workforce
-   and supply/partners, with per-cycle contribution and role-level response coverage.
+   a response that is still being validated is not a completed decision. Open
+   **Find and filter people** for record/role/department search and response filters.
+5. Read **Results** as a compact summary and six change cards, then expand the money,
+   operational trade-offs, round trends, stakeholder responses or sample coverage.
    Inspect supporting events, replay saved actions and download
    a decision brief. Recent simulations and refresh reopen saved work without inference.
 
@@ -78,10 +79,20 @@ it does not grant extra model authority. Small advanced panels retain the origin
 operational-employee selection. The advanced workbench defaults to 12 sample
 customers, two operational employees, one supplier and one reseller, with configurable
 counts subject to eligible source coverage.
-Results are unweighted panel transactions, not full-company estimates. The map uses a
-deterministic layout (no continuously running force simulation); links appear only for
-saved replenishment requests or declared model relationships, never fabricated social
-ties. Satisfaction, morale, churn and supplier-health scores are not invented.
+Results are unweighted panel transactions, not full-company estimates. The network
+reuses the original radial/repulsion layout, settled deterministically once per panel
+(no continuously running force simulation). People stay in place across rounds,
+options and filters. Dotted HQ spokes are visual sample-business membership guides,
+not influence or model relationships. Solid links show only saved replenishment
+requests or declared model relationships. Satisfaction, morale, churn and
+supplier-health scores are not invented. The original presentation is restored,
+not its old heuristic forecasts.
+
+A full 63-person comparison plans 378 remote actor responses at two concurrent
+requests, plus preflight and possible repairs. It can take an hour or more; the
+120-minute stop is a limit, not a completion estimate. Use **Recent simulations**
+to explore saved work without rerunning inference, including completed rounds of
+an interrupted run. Incomplete options are never ranked.
 
 A **shopping cycle** is one modeled purchase opportunity per eligible customer, not a
 day, week, or year. The default is three cycles. There is no automatic annualization,
