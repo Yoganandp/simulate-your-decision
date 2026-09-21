@@ -26,6 +26,13 @@ hard stop (not an ETA). Preparation and exploration make no inference calls.
 This full panel can take an hour or more. Use **Recent simulations** when exploring
 saved work rather than starting another run.
 
+For a shorter live run, start your message with **`Quick preview:`**, followed by
+the two shipping options. This explicitly selects 10 sample stakeholders across
+all six role groups, two rounds per option, 40 planned choices, four concurrent
+remote requests and a 10-minute hard stop. It is a smaller exploratory sample,
+not a faster execution of the full 63-person experiment. The model and operating
+assumptions stay the same; preparation still makes no inference calls.
+
 The **Stakeholder network** brings back the original node-and-link view and side
 inspector inside the Copilot canvas. Drag to pan, zoom, then hover, focus or tap a
 person. Open **Find and filter people** to search or filter. Switch options and

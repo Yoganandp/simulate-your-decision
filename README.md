@@ -94,6 +94,15 @@ requests, plus preflight and possible repairs. It can take an hour or more; the
 to explore saved work without rerunning inference, including completed rounds of
 an interrupted run. Incomplete options are never ranked.
 
+For a smaller live demonstration, prefix the conversational message with
+**`Quick preview:`**. This opt-in profile selects three customers, five employees
+across leadership/management/frontline, one supplier and one reseller. Two rounds
+per option mean 40 planned actor choices, with four concurrent remote requests,
+81 total attempts including preflight/repairs, and a 10-minute hard stop. It uses
+the same explicit model, source-backed inputs and disclosed operating presets.
+It is labeled as a smaller exploratory sample, not a full-business comparison.
+Messages without the prefix retain the existing 63-person configuration.
+
 A **shopping cycle** is one modeled purchase opportunity per eligible customer, not a
 day, week, or year. The default is three cycles. There is no automatic annualization,
 churn estimate, or claim of an individually validated digital twin.

@@ -3,6 +3,7 @@ import { MAX_MONEY, freeze } from "./domain-common.mjs";
 import { SimulationError } from "./store.mjs";
 
 const DEFAULT_FEE = 795;
+const QUICK_PREVIEW = /^quick preview\s*:/i;
 const TOKEN = "@(\\d+)@";
 const SHIPPING = "(?:free[- ]shipping|shipping)";
 const UNSUPPORTED = /\b(?:discounts?|memberships?|subscriptions?|tax(?:es)?|salar(?:y|ies)|wages?|hiring|hire|layoffs?|staffing|warehouse|acquisition|prospects?|percent|pricing|product prices?|delivery times?|express|overnight|same[- ]day|international|coupons?|loyalty|new customers?|existing customers? only|flat[- ]rate|return polic(?:y|ies)|refunds?|marketing|advertising|remote work|hybrid work|open(?:ing)? (?:a |another |new )?(?:store|office))\b|%/i;
@@ -131,7 +132,7 @@ export function interpretConversation(input) {
     invalid("This simulation supports USD free-shipping thresholds and below-threshold shipping fees only; other policy types are not executed.", "UNSUPPORTED_POLICY");
   }
   if (/\b(?:negative|minus|NaN|Infinity)\b/i.test(decisionText)) invalid("Shipping amounts must be finite, nonnegative USD values.");
-  const { source, amounts } = tokenize(decisionText);
+  const { source, amounts } = tokenize(decisionText.replace(QUICK_PREVIEW, "").trimStart());
   if (/\b(?:over|above|at least|threshold (?:of|at|to|from)|fee (?:of|at|to|is))\s+(?!@\d+@|unknown\b|unspecified\b|not known\b)[a-z\d$]/i.test(source)) {
     invalid("A threshold or fee value is not a supported USD amount. Use explicit dollar values, or leave it unspecified for an illustrative preset.");
   }
@@ -281,23 +282,30 @@ export function interpretConversation(input) {
 
 export async function prepareConversation(input) {
   const interpreted = interpretConversation(input);
+  const quick = QUICK_PREVIEW.test(interpreted.decisionText);
+  const panel = quick
+    ? { customerCount: 3, employeeCount: 5, supplierCount: 1, resellerCount: 1, cycles: 2 }
+    : { customerCount: 32, employeeCount: 22, supplierCount: 5, resellerCount: 4, cycles: 3 };
+  const limits = quick
+    ? { concurrency: 4, attemptCap: 81, deadlineMs: 600000 }
+    : { concurrency: 2, attemptCap: 757, deadlineMs: 7200000 };
   let draft;
   try {
     draft = await domain.prepareExperiment({
-      decisionText: interpreted.decisionText, title: "Option A vs Option B · Shipping",
-      customerCount: 32, employeeCount: 22, supplierCount: 5, resellerCount: 4, cycles: 3,
+      decisionText: interpreted.decisionText, title: quick ? "Quick preview · Shipping policies" : "Option A vs Option B · Shipping",
+      ...panel,
       baseline: interpreted.policies[0], options: [{ label: "Option B", ...interpreted.policies[1] }],
-      runConfig: { provider: "copilot", model: "mai-code-1.1-flash", concurrency: 2,
-        attemptCap: 757, deadlineMs: 7200000, callTimeoutMs: 60000, repetitions: 1 },
+      runConfig: { provider: "copilot", model: "mai-code-1.1-flash", ...limits, callTimeoutMs: 60000, repetitions: 1 },
     }, { preset: "conversational-shipping-v1" });
   } catch {
     throw new SimulationError("CONVERSATION_PREPARATION_FAILED", "The shipping comparison could not be prepared from validated sample evidence. Check the local sample-data setup; no replacement evidence or results were generated.", 503);
   }
   const conversation = interpreted.conversation;
+  if (quick) conversation.summary = "Quick preview: 10 sample stakeholders across all six role groups, two rounds per option and 40 planned choices. This is a smaller exploratory sample, not the full business panel. " + conversation.summary;
   conversation.assumptions.push(
     "Unknown operating costs use illustrative presets: $5.00 fulfillment per completed order and $24.00/hour incremental labor. Neither is a measured source fact.",
-    `Bounded business panel: ${draft.inputs.actors.length} sample stakeholders, selected across customers, leadership, management, frontline staff, suppliers and resellers. Three shopping cycles, one repetition (${draft.estimate.plannedActions} planned actor actions across two options); no population weighting or annualization. Source and selected counts are shown separately.`,
-    "Resource limits: at most 2 concurrent model requests, 757 attempts including repairs and preflight, 60 seconds per call, and a 120-minute hard run deadline. This is a stop limit, not a completion-time estimate. Nothing starts until you select Run simulation.",
+    `${quick ? "Quick preview" : "Bounded business panel"}: ${draft.inputs.actors.length} sample stakeholders, selected across customers, leadership, management, frontline staff, suppliers and resellers. ${panel.cycles} shopping cycles, one repetition (${draft.estimate.plannedActions} planned actor actions across two options); no population weighting or annualization. Source and selected counts are shown separately.`,
+    `Resource limits: at most ${limits.concurrency} concurrent model requests, ${limits.attemptCap} attempts including repairs and preflight, 60 seconds per call, and a ${limits.deadlineMs / 60000}-minute hard run deadline. This is a stop limit, not a completion-time estimate. Nothing starts until you select Run simulation.`,
     `Illustrative operating presets: 8 units per product; ${draft.inputs.initialState.baseCapacity} base order slots per cycle; customer budgets at 1.5× scheduled merchandise plus $20 per cycle; $300 total reseller budget.`,
     "Illustrative authority presets: up to 2 extra order slots per employee at 15 minutes each; 6 supplier units per response with a 1-cycle minimum lead time; up to 3 units per reseller order. Supply relationships are assumed; customer-to-customer influence is off.",
     "Pinned AdventureWorks sample records supply the frozen historical baskets, prices and available standard costs. They are sample business evidence, not your company data or current costs; genuinely missing product costs remain unknown.",

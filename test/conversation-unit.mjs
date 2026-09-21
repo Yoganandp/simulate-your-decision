@@ -227,6 +227,31 @@ test("prepares immutable evidence-linked, model-ready options with declared cost
   assert.deepEqual(legacy.inputs.snapshot, inputs.snapshot);
 });
 
+test("an explicit quick preview keeps source evidence and all role groups with only forty planned choices", async () => {
+  const decisionText = `Quick preview: ${examples[2][0]}`;
+  const draft = await prepareConversation({ decisionText });
+  assert.doesNotThrow(() => validateExperiment(draft.definition, draft.inputs));
+  assert.doesNotThrow(() => validateRunConfig(draft.definition, draft.inputs));
+  assert.equal(draft.definition.decisionText, decisionText);
+  assert.match(draft.definition.title, /Quick preview/);
+  assert.equal(draft.definition.horizon.steps, 2);
+  assert.deepEqual(draft.estimate, { plannedActions: 40, maxAttempts: 81 });
+  assert.deepEqual(draft.definition.runConfig, { provider: "copilot", model: "mai-code-1.1-flash",
+    concurrency: 4, attemptCap: 81, deadlineMs: 600000, callTimeoutMs: 60000, repetitions: 1 });
+  assert.deepEqual(Object.fromEntries(["customer", "employee", "supplier", "reseller"].map(role =>
+    [role, draft.inputs.actors.filter(actor => actor.role === role).length])), { customer: 3, employee: 5, supplier: 1, reseller: 1 });
+  const titles = draft.inputs.actors.filter(actor => actor.role === "employee").map(actor => actor.facts.find(fact => fact.field === "jobTitle").value);
+  assert.ok(titles.some(title => /chief|president|director/i.test(title)));
+  assert.ok(titles.some(title => /manager|supervisor|lead/i.test(title)));
+  assert.ok(titles.some(title => !/chief|president|director|manager|supervisor|lead/i.test(title)));
+  assert.match(draft.conversation.summary, /smaller exploratory sample/);
+  assert.match(draft.conversation.assumptions.join(" "), /4 concurrent.*10-minute/);
+  assert.deepEqual(draft.definition.scenarios.map(s => [s.policy.thresholdCents, s.policy.shippingFeeCents]), [[5000, 795], [7500, 395]]);
+  assert.equal(draft.inputs.snapshot.sourceType, "AdventureWorks_sample");
+  assert.ok(!Object.hasOwn(draft, "results"));
+  assert.throws(() => interpretConversation({ decisionText: "Quick preview: Compare subscriptions priced at $50 and $75" }));
+});
+
 test("HTTP conversation drafts save unchanged and reach manager readiness only when a run starts", async () => {
   const root = join(process.cwd(), "test", `.conversation-http-${randomUUID()}`);
   let app, base, token, inference = 0, readiness = 0;
