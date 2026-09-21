@@ -1,4 +1,5 @@
 import { createPeopleGraph } from './people-graph.js';
+import { BUSINESS_SECTIONS, businessInsights } from './business-insights.js';
 
 const $ = (id) => document.getElementById(id);
 const TERMINAL = new Set(['completed', 'failed', 'cancelled', 'interrupted', 'paused']);
@@ -196,7 +197,7 @@ async function sendMessage() {
       state.bundle = { ...saved, conversation: prepared.conversation };
       writeLocal(SELECTION_KEY, { experimentId: saved.definition.experimentId, version: saved.definition.version });
       renderBundle();
-      assistant(`I've set up both options with the same ${saved.inputs.actors.length} sample people over ${saved.definition.horizon.steps} shopping rounds. Missing data is filled in with preset assumptions. Ready to see what happens?`, true);
+      assistant(`I've brought together ${saved.inputs.actors.length} sampled business stakeholders for both options: customers, leadership, managers, frontline staff and partners. Explore their perspectives and the operating assumptions first. Nothing runs until you start it.`, true);
       $('message-input').value = '';
       selectView('people');
       $('simulation-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
@@ -212,7 +213,10 @@ function renderBundle() {
   showConversation(definition.decisionText);
   $('simulation-card').hidden = false;
   $('simulation-title').textContent = definition.scenarios.length === 2
-    ? 'The same people. Two possible futures.' : 'The same people. Different possibilities.';
+    ? 'Two options. A business of perspectives.' : 'Your options. A business of perspectives.';
+  const planned = inputs.actors.length * definition.scenarios.length * definition.horizon.steps;
+  $('runtime-plan').textContent = `${planned} planned actor calls · maximum ${definition.runConfig.concurrency} at a time · ${definition.horizon.steps} rounds per option. `
+    + `${definition.runConfig.attemptCap} total attempts including repairs; ${Math.round(definition.runConfig.deadlineMs / 60000)}-minute hard stop, not an ETA. Starts only on request.`;
   $('simulation-options').replaceChildren();
   definition.scenarios.forEach((scenario, index) => {
     const card = element('article', null, 'option-card');
@@ -518,7 +522,145 @@ function renderOutcomes() {
     card.append(values, element('p', `${result?.completedRounds || 0} / ${state.bundle.definition.horizon.steps} rounds${result?.complete ? ' complete' : ' saved - interim'}`, 'source-note'));
     $('outcome-cards').append(card);
   }
-  $('outcome-notes').textContent = 'Contribution includes only the declared costs; it is not net profit. Results describe this unweighted sample panel, not your whole business.';
+  renderBusinessImpact(complete);
+  $('outcome-notes').textContent = 'Business-wide perspectives from a bounded, unweighted sample—not whole-company estimates. Contribution is not net profit. Morale, satisfaction, churn, overhead and tax are not modeled. Source job titles organize the view; all employee groups retain the same limited shipping-adapter authority.';
+}
+
+function formatImpact(value, unit) {
+  if (!Number.isFinite(value)) return 'Not available';
+  if (unit === 'USD_cents') return money(value);
+  if (unit === 'ratio') return `${(value * 100).toFixed(1)}%`;
+  return new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(value);
+}
+
+function renderBusinessImpact(complete) {
+  const insights = businessInsights(state.bundle, state.run?.results || []);
+  const root = $('business-impact');
+  root.replaceChildren();
+  const coverage = element('section', null, 'business-coverage');
+  coverage.append(element('span', 'WHO IS IN THE ROOM', 'business-eyebrow'), element('h3', 'Breadth without pretending to be the whole business'));
+  const groups = element('div', null, 'business-perspectives');
+  for (const group of insights.groups) {
+    const item = element('div');
+    item.append(element('strong', group.count), element('span', group.label));
+    groups.append(item);
+  }
+  coverage.append(groups);
+  if (insights.population) {
+    const description = Object.entries(insights.population).map(([role, counts]) =>
+      `${titleCase(role)}: ${counts.selected} of ${counts.eligible.toLocaleString()} eligible records (${counts.source.toLocaleString()} source rows)`).join(' · ');
+    coverage.append(element('p', description, 'source-note'));
+  } else coverage.append(element('p', 'This saved snapshot does not record full source-population coverage; no population estimate is inferred.', 'source-note'));
+  root.append(coverage);
+  renderRoundTrend(root, insights);
+
+  const panels = element('div', null, 'business-panels');
+  for (const section of BUSINESS_SECTIONS) {
+    const panel = element('section', null, 'business-panel');
+    panel.append(element('h3', section.title), element('p', section.note, 'source-note'));
+    const scroll = element('div', null, 'business-table-scroll'), table = element('table', null, 'business-table');
+    const caption = element('caption', section.title, 'sr-only');
+    const head = element('thead'), headings = element('tr');
+    for (const label of ['Outcome', ...insights.scenarios.map(scenario => scenario.label), ...(insights.scenarios.length === 2 ? ['B − A'] : [])]) {
+      const th = element('th', label); th.scope = 'col'; headings.append(th);
+    }
+    head.append(headings); table.append(caption, head);
+    const body = element('tbody');
+    for (const [id, label, unit] of section.rows) {
+      const tr = element('tr'), name = element('th', label); name.scope = 'row'; tr.append(name);
+      for (const scenario of insights.scenarios) {
+        const item = scenario.values[id], td = element('td');
+        const button = actionButton(item.available ? formatImpact(item.value, unit) : 'Pending',
+          () => inspectBusinessOutcome(scenario.scenarioId, item), 'business-value');
+        button.disabled = !item.available;
+        button.setAttribute('aria-label', `${scenario.label}: ${label}, ${item.available ? formatImpact(item.value, unit) : 'pending'}. Inspect saved evidence.`);
+        td.append(button); tr.append(td);
+      }
+      if (insights.scenarios.length === 2) {
+        const [a, b] = insights.scenarios.map(scenario => scenario.values[id].value);
+        const delta = complete && Number.isFinite(a) && Number.isFinite(b) ? b - a : null;
+        const display = delta === null ? '—' : unit === 'ratio'
+          ? `${delta > 0 ? '+' : ''}${(delta * 100).toFixed(1)} pp`
+          : `${delta > 0 ? '+' : ''}${formatImpact(delta, unit)}`;
+        tr.append(element('td', display, 'business-delta'));
+      }
+      body.append(tr);
+    }
+    table.append(body); scroll.append(table); panel.append(scroll); panels.append(panel);
+  }
+  root.append(panels, element('p', 'B − A compares complete, matched options only. A positive difference is not necessarily an improvement. Click any saved value to inspect its evidence.', 'source-note'));
+  const responses = element('section', null, 'business-coverage');
+  responses.append(element('h3', 'How each part of the business responded'),
+    element('p', 'Action counts, not sentiment scores. “Took an action” includes purchases, deferrals, abandonments and operational choices; it does not mean approval.', 'source-note'));
+  const roster = element('div', null, 'business-response-grid');
+  for (const group of insights.groups) {
+    const item = element('article', null, 'business-response');
+    item.append(element('h4', group.label));
+    for (const scenario of insights.scenarios) {
+      const value = scenario.groups.find(entry => entry.id === group.id);
+      item.append(element('p', `${scenario.label}: ${value.committed} / ${value.planned} decisions saved`, 'business-response-title'));
+      const progress = element('progress');
+      progress.max = value.planned; progress.value = value.committed;
+      progress.setAttribute('aria-label', `${scenario.label}, ${group.label}: ${value.committed} of ${value.planned} decisions saved`);
+      item.append(progress, element('p', value.committed ? `${value.changed} took an action · ${value.noAction} no action · ${value.blocked} orders blocked` : 'No saved decisions yet.', 'source-note'));
+    }
+    roster.append(item);
+  }
+  responses.append(roster); root.append(responses);
+}
+
+function renderRoundTrend(root, insights) {
+  const section = element('section', null, 'business-trend');
+  section.append(element('span', 'THE PATH THROUGH THE ROUNDS', 'business-eyebrow'), element('h3', 'Contribution, one shopping cycle at a time'));
+  const series = insights.scenarios.map(scenario => ({ label: scenario.label, rounds: scenario.rounds }));
+  const values = series.flatMap(item => item.rounds.map(round => round.contribution)).filter(Number.isFinite);
+  if (values.length) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 560 150'); svg.setAttribute('class', 'business-trend-chart');
+    svg.setAttribute('role', 'img'); svg.setAttribute('aria-label', 'Per-cycle simulated contribution. Exact values and missing rounds are listed below.');
+    const low = Math.min(0, ...values), high = Math.max(1, ...values);
+    const x = index => 36 + index * (488 / Math.max(1, state.bundle.definition.horizon.steps - 1));
+    const y = value => 118 - (value - low) / (high - low) * 96;
+    const add = (tag, attributes) => {
+      const node = document.createElementNS(svg.namespaceURI, tag);
+      for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+      svg.append(node); return node;
+    };
+    add('path', { d: `M28 ${y(0)} H532`, class: 'business-zero' });
+    series.forEach((item, index) => {
+      let previous = null;
+      for (const point of item.rounds) {
+        if (point.contribution === null) { previous = null; continue; }
+        const position = { x: x(point.round - 1), y: y(point.contribution) };
+        if (previous) add('path', { d: `M${previous.x} ${previous.y} L${position.x} ${position.y}`, class: `business-line series-${index}` });
+        add('circle', { cx: position.x, cy: position.y, r: 4, class: `business-point series-${index}` });
+        previous = position;
+      }
+    });
+    series[0].rounds.forEach(point => { add('text', { x: x(point.round - 1), y: 143, 'text-anchor': 'middle' }).textContent = `Round ${point.round}`; });
+    section.append(svg);
+  } else section.append(element('p', 'The trajectory appears after a round commits. No projected line or invented outcome.', 'source-note'));
+  const legend = element('div', null, 'business-trend-values');
+  series.forEach((item, index) => {
+    const row = element('p', null, `series-${index}`);
+    row.append(element('strong', `${item.label}: `), document.createTextNode(item.rounds.map(point =>
+      `R${point.round} ${point.saved ? formatImpact(point.contribution, 'USD_cents') : 'pending'}`).join(' · ')));
+    legend.append(row);
+  });
+  section.append(legend); root.append(section);
+}
+
+function inspectBusinessOutcome(scenarioId, item) {
+  if (item.metricId) { inspectMetric(scenarioId, item.metricId); return; }
+  const result = state.run?.results.find(entry => entry.scenarioId === scenarioId);
+  const ids = new Set(item.eventIds);
+  const events = (result?.ledgerEvents || []).filter(event => ids.has(event.eventId));
+  showDetails(item.label, [
+    element('p', formatImpact(item.value, item.unit), 'outcome-value'),
+    element('p', `Calculated from committed ${scenarioId} ledger events, through round ${result?.completedRounds || 0}. Unit: ${item.unit}. Not a company-wide estimate.`, 'source-note'),
+    ...(events.length ? events.map(event => disclosure(`${titleCase(event.type)} · round ${event.round}`, event))
+      : [element('p', 'No matching events in the saved rounds. A zero count is not a forecast; undefined rates and missing amounts remain unavailable.')]),
+  ]);
 }
 
 async function stopRun() {

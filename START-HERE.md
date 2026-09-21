@@ -18,10 +18,19 @@ The app prepares and saves the comparison, filling missing costs and operational
 with labeled exploratory presets. There is no setup questionnaire. Select **Run
 simulation** in the inline card, or **Expand** to explore it full-screen.
 
-Hover, focus, or tap a person in the network to inspect their simulated choices.
-Switch options and rounds, or follow the live updates. Open **Outcomes** for the
-comparison and download a decision brief. The people view groups the sample panel by
-role; it does not invent relationship links when the frozen model has no graph edges.
+The default is a bounded 63-stakeholder panel: 32 customers, 22 employees across
+leadership/management/frontline, five suppliers and four resellers. It samples business
+perspectives, not every source record. Two options and three rounds plan 378 actor calls,
+limited to two concurrent requests. The UI discloses the attempt budget and 120-minute
+hard stop (not an ETA). Preparation and exploration make no inference calls.
+
+Search the **Business map**, filter groups or response status, zoom, then hover, focus
+or tap a person to inspect saved choices. Switch options and rounds, or follow live
+updates. **Business impact** compares economics, customer behavior, fulfillment,
+workforce actions and supply/partners, plus per-round contribution and response coverage.
+Every saved value links to its evidence. Download a decision brief for the same
+cross-business view. Graph links show saved operational requests, not invented social ties.
+No satisfaction, morale or churn scores are fabricated.
 
 History survives a refresh. Replay uses saved actions without inference; Cancel stops
 work explicitly. Results are simulated, unweighted panel outcomes over purchase

@@ -44,10 +44,13 @@ proposal, source snapshot, config example, or git commit.
    missing-data presets. No assumption questionnaire or model configuration is required.
 3. Select **Run simulation** in the inline card. Expand it into a full-screen workspace
    without navigating away from the conversation.
-4. Follow the live people graph, hover/focus/tap a stakeholder, and select an option
+4. Explore the business map, search by record/role/department, filter stakeholder groups
+   or response status, zoom, hover/focus/tap a stakeholder, and select an option
    or round to inspect its saved choices. Only committed rounds contribute to outcomes;
    a response that is still being validated is not a completed decision.
-5. Compare outcomes, inspect their supporting events, replay saved actions and download
+5. Compare business impact across finances, customer choices, fulfillment/workforce
+   and supply/partners, with per-cycle contribution and role-level response coverage.
+   Inspect supporting events, replay saved actions and download
    a decision brief. Recent simulations and refresh reopen saved work without inference.
 
 The detailed workbench at `/advanced` retains editable preparation, objective/guardrail
@@ -66,11 +69,19 @@ simulation. The interface is a local Copilot-style prototype, not a deployed M36
 
 ## What the results mean
 
-The conversation uses a preset sample panel and three rounds; the actual people and
-counts appear in the inline card. The advanced workbench defaults to 12 sample
+The conversation restores the original application's bounded breadth: **32 customers,
+22 employees across leadership, management and frontline roles, 5 suppliers and 4
+resellers** (63 stakeholders), with three rounds per option. Source, eligible and selected
+counts are reported separately. Names on the map come from evidence-linked sample
+records, with generic labels for older snapshots without names. Employee grouping derives from source title/department;
+it does not grant extra model authority. Small advanced panels retain the original
+operational-employee selection. The advanced workbench defaults to 12 sample
 customers, two operational employees, one supplier and one reseller, with configurable
 counts subject to eligible source coverage.
-Results are unweighted panel transactions, not full-company estimates.
+Results are unweighted panel transactions, not full-company estimates. The map uses a
+deterministic layout (no continuously running force simulation); links appear only for
+saved replenishment requests or declared model relationships, never fabricated social
+ties. Satisfaction, morale, churn and supplier-health scores are not invented.
 
 A **shopping cycle** is one modeled purchase opportunity per eligible customer, not a
 day, week, or year. The default is three cycles. There is no automatic annualization,
@@ -134,8 +145,15 @@ If termination cannot be confirmed, a persistent `runtime-block.json` in the app
 data root blocks new inference. Do not remove it until the owned runtime processes have
 been confirmed stopped. Failures and configured deadlines also stop a run.
 Every attempted call, including a repair or retry, counts toward the attempt budget.
-The default configuration has concurrency four, a 320-attempt ceiling, 60-second call
-deadline, and 15-minute run deadline.
+The conversational business panel plans **378 actor calls**, with at most **two
+concurrent requests**, a 757-attempt ceiling including preflight/repairs, the unchanged
+60-second per-call deadline, and a 120-minute hard run deadline. That limit allows a
+larger queue at lower concurrency; it is **not an ETA** and does not extend a hung call.
+No inference begins during preparation, graph exploration or reading saved results.
+Panels larger than 32 actors are restricted to two concurrent requests in both domain
+and runtime validation. The small advanced-panel defaults remain four concurrent
+requests, a 320-attempt ceiling, and a 15-minute deadline. All panels remain capped at
+63 stakeholders and three cycles.
 
 **Replay** re-reduces saved accepted actions and verifies their events/state without
 calling a model. **Rerun** makes fresh model requests and may produce different behavior

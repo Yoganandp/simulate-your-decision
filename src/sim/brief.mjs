@@ -1,4 +1,5 @@
 import { SimulationError } from "./store.mjs";
+import { businessInsights } from "../../web/business-insights.js";
 
 const clean = value => String(value ?? "").replace(/[\r\n]+/g, " ").replace(/[<>`[\]|]/g, "").slice(0, 180);
 const reference = metric => `${metric.scenarioId}:${metric.metricId}`;
@@ -45,6 +46,17 @@ export function createBrief({ runId, status, manifest, results, comparison }) {
     lines.push("The comparison does not establish an unqualified preferred option. Review trade-offs, missing coverage and the declared constraints before deciding.");
   }
   lines.push("Customers select permitted purchase, deferral or abandonment actions. Operational actors can affect later cycles. Inspect committed actions and observations for individual impacts; generated explanations are not evidence of real people's thoughts.");
+  const insights = businessInsights(manifest, results);
+  lines.push("", "## Business perspectives (unweighted sample)");
+  lines.push(insights.groups.map(group => `${group.count} ${group.label.toLowerCase()}`).join("; ") + ". These are sampled roles, not a whole-company forecast.");
+  lines.push("Counts below are calculated from saved ledger events; inspect the named event types in each scenario.");
+  lines.push("| Option | Customer orders | Work minutes scheduled | Capacity-blocked orders | Supply units scheduled / arrived | Reseller orders |");
+  lines.push("| --- | ---: | ---: | ---: | ---: | ---: |");
+  for (const scenario of insights.scenarios) {
+    const value = id => scenario.values[id].value ?? "unknown";
+    lines.push(`| ${clean(scenario.label)} | ${value("customerOrders")} | ${value("laborMinutes")} | ${value("capacityBlocked")} | ${value("unitsDispatched")} / ${value("unitsArrived")} | ${value("resellerOrders")} |`);
+  }
+  lines.push("Ledger basis: purchase (actor role), capacity_scheduled.laborMinutes, capacity_unavailable, replenishment_scheduled.quantity, replenishment_arrived.quantity. Satisfaction, morale and churn are not modeled.");
   lines.push("", "## Evidence, assumptions and limits");
   lines.push("AdventureWorks is sample business data. Synthetic preferences, operational costs and inferred relationships remain declared assumptions. Evidence identifiers, missing coverage, formulas and contributing ledger events are available in the saved experiment and metric records.");
   if (Array.isArray(inputs.assumptions) && inputs.assumptions.length) {

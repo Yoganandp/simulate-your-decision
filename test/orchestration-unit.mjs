@@ -32,7 +32,8 @@ function recordedAction(prompt) {
   };
 }
 
-async function fixture(t, { behavior, startBehavior, stopBehavior, preflightResult, config = {}, cycles = 1, customers = 2, unitCostCents, objective, constraints } = {}) {
+async function fixture(t, { behavior, startBehavior, stopBehavior, preflightResult, config = {}, cycles = 1, customers = 2,
+  employees = 1, suppliers = 1, resellers = 1, unitCostCents, objective, constraints } = {}) {
   const root = join(repository, `.test-orchestration-${randomUUID()}`);
   mkdirSync(root);
   const counters = { calls: 0, starts: 0, stops: 0, preflights: 0, active: 0, maxActive: 0, prompts: [], signals: [] };
@@ -65,7 +66,7 @@ async function fixture(t, { behavior, startBehavior, stopBehavior, preflightResu
   });
   const bundle = prepareSyntheticFixture({
     decisionText: "Compare the reviewed shipping policy options.",
-    customerCount: customers, employeeCount: 1, supplierCount: 1, resellerCount: 1, cycles,
+    customerCount: customers, employeeCount: employees, supplierCount: suppliers, resellerCount: resellers, cycles,
     ...(unitCostCents === undefined ? {} : { unitCostCents }),
     ...(objective === undefined ? {} : { objective }),
     ...(constraints === undefined ? {} : { constraints }),
@@ -134,6 +135,24 @@ test("complete real-domain round execution, budgets, immutable metadata, replay 
   const debug = join(f.root, "runs", start.runId, "debug");
   assert.equal(readdirSync(debug).length, f.counters.calls);
   assert.ok(JSON.parse(readFileSync(join(debug, readdirSync(debug)[0]), "utf8")).rawText);
+});
+
+test("business-sized panel persists all 378 fixture choices with at most two requests active", async t => {
+  const f = await fixture(t, {
+    customers: 32, employees: 22, suppliers: 5, resellers: 4, cycles: 3,
+    config: { concurrency: 2, attemptCap: 757, deadlineMs: 120000, callTimeoutMs: 1000 },
+  });
+  const started = await f.start();
+  await f.api.manager.waitForIdle();
+  const run = f.api.manager.getRun(started.runId);
+  assert.equal(run.status, "completed", JSON.stringify(run.error));
+  assert.equal(f.counters.calls, 378);
+  assert.equal(f.counters.maxActive, 2);
+  assert.equal(run.events.filter(event => event.type === "attempt_started").length, 379);
+  assert.equal(run.results.reduce((sum, result) => sum + result.actions.length, 0), 378);
+  assert.ok(run.results.every(result => result.complete && result.completedRounds === 3));
+  assert.ok(Buffer.byteLength(JSON.stringify(run.results)) < 8 * 1024 * 1024);
+  assert.match(f.api.manager.brief(started.runId).markdown, /Business perspectives/);
 });
 
 test("production H0 factory selects the official SDK harness, never the legacy CLI engine", async t => {

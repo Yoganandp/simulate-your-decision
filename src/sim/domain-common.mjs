@@ -4,6 +4,7 @@ export const ADAPTER_VERSION = "shipping-policy-h0.1";
 export const PROMPT_VERSION = "shipping-choice-h0.2";
 export const SUPPORTED_PROMPT_VERSIONS = Object.freeze(["shipping-choice-h0.1", PROMPT_VERSION]);
 export const MAX_MONEY = 100_000_000;
+export const PANEL_LIMITS = Object.freeze({ customer: 32, employee: 22, supplier: 5, reseller: 4 });
 export const CAPABILITIES = Object.freeze({
   customer: ["purchase", "add_item", "substitute", "defer", "abandon", "no_action"],
   employee: ["request_capacity", "request_replenishment", "escalate", "no_action"],
@@ -54,7 +55,8 @@ export function freeze(value) {
   return value;
 }
 export function seededOrder(values, seed, identity = value => value.id) {
-  return [...values].sort((a, b) => stableHash([seed, identity(a)]).localeCompare(stableHash([seed, identity(b)])));
+  return values.map(value => ({ value, rank: stableHash([seed, identity(value)]) }))
+    .sort((a, b) => a.rank.localeCompare(b.rank)).map(item => item.value);
 }
 export function cents(value, label, nullable = false) {
   if (nullable && (value === null || value === "" || value === "\\N" || value === "NULL")) return null;

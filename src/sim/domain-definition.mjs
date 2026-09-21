@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { ADAPTER_VERSION, CAPABILITIES, PROMPT_VERSION, SUPPORTED_PROMPT_VERSIONS, MAX_MONEY, array, canonical, check, clone,
+import { ADAPTER_VERSION, CAPABILITIES, PROMPT_VERSION, SUPPORTED_PROMPT_VERSIONS, MAX_MONEY, PANEL_LIMITS, array, canonical, check, clone,
   freeze, integer, keys, object, omit, stableHash, text, unique } from "./domain-common.mjs";
 import { loadSample, SOURCE_HASHES, syntheticSource } from "./domain-source.mjs";
 
@@ -62,10 +62,10 @@ const ADAPTER_ASSUMPTIONS = [
 
 function countsFrom(input) {
   return {
-    customer: integer(input.customerCount ?? 12, "customerCount", 1, 24),
-    employee: integer(input.employeeCount ?? 2, "employeeCount", 0, 4),
-    supplier: integer(input.supplierCount ?? 1, "supplierCount", 0, 2),
-    reseller: integer(input.resellerCount ?? 1, "resellerCount", 0, 2),
+    customer: integer(input.customerCount ?? 12, "customerCount", 1, PANEL_LIMITS.customer),
+    employee: integer(input.employeeCount ?? 2, "employeeCount", 0, PANEL_LIMITS.employee),
+    supplier: integer(input.supplierCount ?? 1, "supplierCount", 0, PANEL_LIMITS.supplier),
+    reseller: integer(input.resellerCount ?? 1, "resellerCount", 0, PANEL_LIMITS.reseller),
   };
 }
 function validateAssumptionValues(values) {
@@ -87,7 +87,7 @@ function validateRunConfig(config, plannedActions) {
   check(config.model === null || (typeof config.model === "string" && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,119}$/.test(config.model)), "model must be an explicit model ID or null while preparing");
   integer(config.concurrency, "concurrency", 1, 8);
   integer(config.attemptCap, "attemptCap", plannedActions + 1, 1000);
-  integer(config.deadlineMs, "deadlineMs", 1000, 1_800_000);
+  integer(config.deadlineMs, "deadlineMs", 1000, 7_200_000);
   integer(config.callTimeoutMs, "callTimeoutMs", 1000, 120_000);
   check(config.callTimeoutMs <= config.deadlineMs, "callTimeoutMs exceeds total deadline");
   check(config.repetitions === 1, "H0 supports one repetition only");
@@ -213,7 +213,7 @@ function prepare(input, synthetic = false, preparation = {}) {
   const fact = (field, value, unit, evidenceIds = [], assumptionIds = []) => ({ field, value, unit, evidenceIds, assumptionIds });
   const actors = source.customers.map(customer => ({
     id: customer.id, role: "customer", label: customer.label, profileMode: customer.profileMode, sourceEntityIds: [customer.sourceEntityId],
-    facts: [fact("firstPurchaseDate", customer.firstPurchaseDate, "date", customer.evidenceIds),
+    facts: [...(customer.facts || []), fact("firstPurchaseDate", customer.firstPurchaseDate, "date", customer.evidenceIds),
       fact("existingCustomer", true, "boolean", customer.evidenceIds, ["a-eligibility"]),
       fact("panelWeight", 1, "unweighted_actor", [], ["a-opportunities"])],
     unknowns: ["preferences", "shipping_sensitivity", "current_real_budget", "future_purchase_frequency"],
@@ -275,7 +275,7 @@ function prepare(input, synthetic = false, preparation = {}) {
   inputs.initialStateId = `state-${inputs.initialStateHash.slice(0, 24)}`;
   inputs.integrityHash = stableHash(inputs);
   const plannedActions = actors.length * scenarios.length * cycles;
-  const runConfig = { provider: "copilot", model: null, concurrency: 4, attemptCap: Math.max(320, plannedActions), deadlineMs: 900000,
+  const runConfig = { provider: "copilot", model: null, concurrency: actors.length > 32 ? 2 : 4, attemptCap: Math.min(1000, Math.max(320, plannedActions * 2 + 1)), deadlineMs: 900000,
     callTimeoutMs: 60000, repetitions: 1, ...(input.runConfig || {}) };
   validateRunConfig(runConfig, plannedActions);
   const constraints = clone(input.constraints || []);
@@ -348,7 +348,7 @@ export function validateExperiment(definition, inputs) {
     check(stableHash(scenario.interventions) === stableHash(expected), "Interventions do not match normalized policy");
   }
   const snapshot = inputs.snapshot;
-  object(snapshot, "snapshot"); array(snapshot.products, "products", 128, 1); array(snapshot.historicalOrders, "historicalOrders", 72, 1);
+  object(snapshot, "snapshot"); array(snapshot.products, "products", 128, 1); array(snapshot.historicalOrders, "historicalOrders", 96, 1);
   keys(snapshot, ["schemaVersion", "importerVersion", "sourceType", "asOf", "units", "sourceFiles", "entityCounts", "coverage",
     "products", "historicalOrders", "evidenceHash", "hash", "snapshotId"], "snapshot");
   check(["AdventureWorks_sample", "synthetic_test_fixture"].includes(snapshot.sourceType), "Unsupported snapshot sourceType");
@@ -439,8 +439,19 @@ export function validateExperiment(definition, inputs) {
     if (product.unitCostCents !== null) integer(product.unitCostCents, "unit cost");
     refs(product, "product"); array(product.costEvidenceIds, "product costEvidenceIds", 10, 1); check(product.costEvidenceIds.every(id => evidenceIds.has(id)), "Invalid product cost evidence");
   }
-  array(inputs.actors, "actors", 32, 1); unique(inputs.actors.map(actor => actor.id), "actors");
-  for (const role of Object.keys(CAPABILITIES)) integer(inputs.actors.filter(actor => actor.role === role).length, `${role} count`, role === "customer" ? 1 : 0, { customer: 24, employee: 4, supplier: 2, reseller: 2 }[role]);
+  array(inputs.actors, "actors", 63, 1); unique(inputs.actors.map(actor => actor.id), "actors");
+  if (inputs.actors.length > 32) check(definition.runConfig.concurrency <= 2, "Business panels are limited to two concurrent requests");
+  for (const role of Object.keys(CAPABILITIES)) {
+    const count = inputs.actors.filter(actor => actor.role === role).length;
+    integer(count, `${role} count`, role === "customer" ? 1 : 0, PANEL_LIMITS[role]);
+    if (snapshot.coverage.population) {
+      const population = snapshot.coverage.population[role];
+      object(population, `${role} population`);
+      integer(population.source, `${role} source population`, 0, 100000);
+      integer(population.eligible, `${role} eligible population`, count, population.source);
+      check(population.selected === count, `${role} selected population mismatch`);
+    }
+  }
   for (const actor of inputs.actors) {
     keys(actor, ["id", "role", "label", "profileMode", "sourceEntityIds", "facts", "unknowns", "feasibleActions"], "actor");
     check(Object.hasOwn(CAPABILITIES, actor.role), "Invalid actor role");
@@ -478,7 +489,7 @@ export function validateExperiment(definition, inputs) {
     integer(resource.budgetCents, "initial budget"); check(resource.spentCents === 0 && resource.purchases === 0 && resource.memory.length === 0, "Initial resources contain prior effects");
   }
   const buyers = inputs.actors.filter(actor => ["customer", "reseller"].includes(actor.role));
-  array(inputs.opportunities, "opportunities", 78, 1);
+  array(inputs.opportunities, "opportunities", 108, 1);
   check(inputs.opportunities.length === buyers.length * definition.horizon.steps, "Opportunity schedule incomplete");
   unique(inputs.opportunities.map(op => `${op.actorId}:${op.round}`), "opportunity actor/round");
   unique(inputs.opportunities.map(op => op.opportunityId), "opportunities");

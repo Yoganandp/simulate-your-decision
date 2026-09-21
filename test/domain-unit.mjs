@@ -44,7 +44,7 @@ await test("Stable snapshots, explicit labels, source/assumption links and bound
   assert.ok(first.inputs.actors.every(actor => actor.facts.every(fact => fact.evidenceIds.length + fact.assumptionIds.length > 0)));
   assert.equal(first.estimate.plannedActions, 45);
   assert.equal(first.definition.horizon.unit, "shopping_cycle");
-  assert.throws(() => fixture({ customerCount: 25 }), /customerCount/);
+  assert.throws(() => fixture({ customerCount: 33 }), /customerCount/);
   assert.throws(() => fixture({ cycles: 4 }), /cycles/);
   assert.throws(() => fixture({ options: [] }), /options/);
   assert.throws(() => fixture({ runConfig: { provider: "stub" } }), /copilot/);

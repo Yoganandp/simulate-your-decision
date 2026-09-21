@@ -214,6 +214,7 @@ export async function createAppServer(options = {}) {
     ["/chat.js", ["chat.js", "text/javascript; charset=utf-8"]],
     ["/chat.css", ["chat.css", "text/css; charset=utf-8"]],
     ["/people-graph.js", ["people-graph.js", "text/javascript; charset=utf-8"]],
+    ["/business-insights.js", ["business-insights.js", "text/javascript; charset=utf-8"]],
     ["/people-graph.css", ["people-graph.css", "text/css; charset=utf-8"]],
     ["/legacy", ["legacy.html", "text/html; charset=utf-8"]],
     ["/legacy.html", ["legacy.html", "text/html; charset=utf-8"]],

@@ -56,13 +56,16 @@ export function validateRunConfig(definition, inputs) {
   }
   boundedInteger(config.concurrency, 1, 8, "concurrency");
   boundedInteger(config.attemptCap, 1, 1000, "attempt budget");
-  boundedInteger(config.deadlineMs, 100, 30 * 60 * 1000, "run deadline");
+  boundedInteger(config.deadlineMs, 100, 120 * 60 * 1000, "run deadline");
   boundedInteger(config.callTimeoutMs, 25, 120000, "call deadline");
   if (config.repetitions !== 1) throw new SimulationError("INVALID_CONFIG", "H0 supports a single repetition per scenario.");
   boundedInteger(definition.horizon?.steps, 1, 6, "horizon");
   if (!Array.isArray(definition.scenarios) || definition.scenarios.length < 2 || definition.scenarios.length > 3
     || !Array.isArray(inputs.actors) || inputs.actors.length < 1 || inputs.actors.length > 64) {
     throw new SimulationError("INVALID_CONFIG", "H0 requires a bounded stakeholder panel and a baseline with alternatives.");
+  }
+  if (inputs.actors.length > 32 && config.concurrency > 2) {
+    throw new SimulationError("INVALID_CONFIG", "Business panels are limited to two concurrent requests.");
   }
   for (const scenario of definition.scenarios) safeId(scenario.scenarioId, "scenario identifier");
   for (const actor of inputs.actors) safeId(actor.id, "actor identifier");

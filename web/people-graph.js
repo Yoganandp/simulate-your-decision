@@ -153,19 +153,24 @@ export function derivePeopleGraphState({ bundle, run = null, events = [], select
   const counts = {}, numbers = {};
   const nodes = actors.map(actor => {
     const role = asText(actor.role) || 'person';
-    numbers[role] = (numbers[role] || 0) + 1;
+    const group = stakeholderGroup(actor), groupInfo = STAKEHOLDER_GROUPS.find(item => item.id === group);
+    numbers[group] = (numbers[group] || 0) + 1;
     const key = keyFor(selected.scenarioId, selected.round, actor.id);
     const status = actorStatus({ actor, run, runStatus, record: records.get(key),
       ledger: [...(ledgers.get(selected.scenarioId)?.values() || [])], event: latest.get(key), ...selected });
     counts[status.state] = (counts[status.state] || 0) + 1;
-    return { ...status, statusLabel: status.label, role, label: `${ROLE_LABELS[role] || 'Person'} ${numbers[role]}`,
+    const fact = key => asText(actor.facts?.find(item => item.field === key)?.value);
+    const name = [fact('givenName'), fact('familyName')].filter(Boolean).join(' ')
+      || fact('sampleVendorName') || fact('sampleResellerName');
+    return { ...status, statusLabel: status.label, role, group,
+      label: name || `${groupInfo?.short || ROLE_LABELS[role] || 'Person'} ${numbers[group]}`,
       sourceLabel: asText(actor.label) || actor.id, actor };
   });
   return { nodes, scenarios, steps, selected, cursor, runStatus, counts,
     committed: nodes.filter(node => node.committed).length, active: nodes.filter(node => node.active).length };
 }
 
-function graphTopology(bundle, actors) {
+function graphTopology(bundle, actors, run, selection) {
   const nodes = new Map(actors.map(actor => [actor.id, { ...actor, actor: true }]));
   for (const node of asArray(bundle?.inputs?.graph?.nodes)) {
     if (typeof node?.id === 'string' && !nodes.has(node.id)) nodes.set(node.id, { ...node, actor: false });
@@ -177,6 +182,13 @@ function graphTopology(bundle, actors) {
     to: endpoint(edge.to ?? edge.target ?? edge.targetId),
     label: asText(edge.label) || asText(edge.type) || 'Modeled relationship',
   })).filter(edge => nodes.has(edge.from) && nodes.has(edge.to));
+  const result = asArray(run?.results).find(item => item.scenarioId === selection?.scenarioId);
+  for (const event of asArray(result?.ledgerEvents)) {
+    if (event.type !== 'replenishment_requested' || event.round > selection.round
+      || event.round > result.completedRounds || !nodes.has(event.actorId) || !nodes.has(event.supplierId)) continue;
+    edges.push({ id: event.eventId, from: event.actorId, to: event.supplierId,
+      label: `Saved replenishment request, round ${event.round}. Assumed operating authority, not a source relationship.` });
+  }
   return { nodes: [...nodes.values()], edges };
 }
 
@@ -214,6 +226,30 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   const summary = html('span', 'pg-summary');
   summary.setAttribute('role', 'status'); summary.setAttribute('aria-live', 'polite');
   timeline.append(rounds, summary);
+  const heading = html('div', 'pg-map-heading');
+  const headingCopy = html('div');
+  headingCopy.append(html('span', 'pg-eyebrow', 'BUSINESS PERSPECTIVES'), html('h3', '', 'One business. Every point of view.'));
+  const resource = html('span', 'pg-resource');
+  heading.append(headingCopy, resource);
+  const filters = html('div', 'pg-filters');
+  const search = html('input', 'pg-search');
+  search.type = 'search'; search.placeholder = 'Find a person, role or department';
+  search.setAttribute('aria-label', 'Find a stakeholder'); search.autocomplete = 'off';
+  const stateFilter = html('select', 'pg-state-filter');
+  stateFilter.setAttribute('aria-label', 'Filter by decision status');
+  for (const [value, label] of [['all', 'All responses'], ['active', 'In progress'], ['committed', 'Saved decisions'], ['constrained', 'Blocked orders']]) {
+    const option = html('option', '', label); option.value = value; stateFilter.append(option);
+  }
+  const zoomTools = html('div', 'pg-zoom');
+  const zoomOut = button('pg-zoom-out', '−'), zoomIn = button('pg-zoom-in', '+'), zoomReset = button('pg-zoom-reset', '100%');
+  zoomOut.setAttribute('aria-label', 'Zoom out'); zoomIn.setAttribute('aria-label', 'Zoom in');
+  zoomReset.setAttribute('aria-label', 'Reset graph zoom');
+  zoomTools.append(zoomOut, zoomReset, zoomIn);
+  filters.append(search, stateFilter, zoomTools);
+  const groupFilters = html('div', 'pg-group-filters');
+  groupFilters.setAttribute('role', 'group'); groupFilters.setAttribute('aria-label', 'Stakeholder perspectives');
+  const visibleSummary = html('span', 'pg-visible-summary');
+  visibleSummary.setAttribute('role', 'status');
   const stage = html('div', 'pg-stage'), viewport = html('div', 'pg-viewport');
   const canvas = svg('svg', { class: 'pg-canvas', role: 'group', 'aria-label': 'Simulated people, grouped by role' });
   const groupsLayer = svg('g', { class: 'pg-groups', 'aria-hidden': 'true' });
@@ -222,6 +258,9 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   const empty = html('div', 'pg-empty');
   empty.append(html('span', 'pg-empty-mark', '◌'), html('strong', '', 'Your people, in perspective'),
     html('p', '', 'Describe your options to prepare the sample panel. Live decisions will appear here when you run it.'));
+  const noMatches = html('div', 'pg-empty pg-no-matches');
+  noMatches.hidden = true;
+  noMatches.append(html('strong', '', 'No matching stakeholders'), html('p', '', 'Try another name, department or response filter.'));
   const popup = html('section', 'pg-popup');
   popup.id = `${id}-detail`; popup.hidden = true; popup.setAttribute('aria-label', 'Person and saved decision');
   const popupTop = html('div', 'pg-popup-top'), popupRole = html('span', 'pg-popup-role');
@@ -234,16 +273,20 @@ export function createPeopleGraph(root, { onInspect } = {}) {
   const explanation = html('p', 'pg-popup-explanation'), note = html('p', 'pg-popup-note');
   const inspect = button('pg-inspect', 'View decision details ↗');
   popup.append(popupTop, popupTitle, source, context, status, facts, explanationLabel, explanation, note, inspect);
-  stage.append(viewport, empty, popup);
+  stage.append(viewport, empty, noMatches, popup);
   const footer = html('div', 'pg-footer'), legend = html('div', 'pg-legend');
   for (const [state, label] of [['idle', 'Waiting'], ['running', 'In progress'], ['ready', 'Response ready'], ['committed', 'Committed'], ['neutral', 'No action']]) {
     const item = html('span', 'pg-legend-item', label); item.dataset.state = state; legend.append(item);
   }
   const connectionNote = html('p', 'pg-connection-note');
-  footer.append(legend, connectionNote);
-  root.classList.add('people-graph'); root.replaceChildren(controls, timeline, stage, footer);
+  footer.append(legend, visibleSummary, connectionNote);
+  const navigation = html('div', 'pg-navigation');
+  navigation.append(controls, timeline);
+  root.classList.add('people-graph'); root.replaceChildren(heading, navigation, filters, groupFilters, stage, footer);
   const actorElements = new Map(), hubElements = new Map(), edgeElements = new Map(), groupElements = new Map();
   const scenarioButtons = new Map(), roundButtons = new Map();
+  const groupButtons = new Map();
+  let filterGroup = 'all', zoom = 1;
   let input = {}, model = derivePeopleGraphState(), topology = { nodes: [], edges: [] };
   let followLive = true, selected = null, pinned = null, hovered = null, focused = null, shown = null;
   let dismissed = null, hideTimer, resizeFrame, destroyed = false, identity = null, topologyKey = '';
@@ -302,6 +345,9 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     popup.dataset.state = data.state;
     text(popupRole, `${ROLE_LABELS[data.role] || 'Person'} · ${data.actor.profileMode === 'synthetic' ? 'test fixture' : 'sample record'}`);
     text(popupTitle, data.label); text(source, data.sourceLabel);
+    const job = data.actor.facts?.find(item => item.field === 'jobTitle')?.value;
+    const department = data.actor.facts?.find(item => item.field === 'department')?.value;
+    if (job) text(source, `${job}${department ? ` · ${department}` : ''} · ${data.sourceLabel}`);
     const scenario = model.scenarios.find(item => item.scenarioId === model.selected.scenarioId);
     text(context, `${scenario?.label || 'Prepared option'} · Round ${model.selected.round}`);
     text(status, data.statusLabel); text(facts, data.facts.join(' · ')); facts.hidden = !data.facts.length;
@@ -333,14 +379,14 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     const hit = svg('rect', { class: 'pg-node-hit', x: -28, y: -28, width: 56, height: 56, 'aria-hidden': 'true' });
     const halo = svg('circle', { class: 'pg-node-halo', r: 28, 'aria-hidden': 'true' });
     const face = svg('circle', { class: 'pg-node-face', r: 22, 'aria-hidden': 'true' });
-    const head = svg('circle', { class: 'pg-person-head', cy: -6, r: 5.6, 'aria-hidden': 'true' });
-    const shoulders = svg('path', { class: 'pg-person-body', d: 'M-11 12C-11 1 11 1 11 12Z', 'aria-hidden': 'true' });
+    const monogram = svg('text', { class: 'pg-monogram', y: 5, 'text-anchor': 'middle', 'aria-hidden': 'true' });
+    monogram.textContent = data.label.split(/\s+/).slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase();
     const badge = svg('circle', { class: 'pg-node-badge', cx: 17, cy: 16, r: 7, 'aria-hidden': 'true' });
     const badgeMark = svg('text', { class: 'pg-node-badge-mark', x: 17, y: 19.5, 'text-anchor': 'middle', 'aria-hidden': 'true' });
-    const label = svg('text', { class: 'pg-node-label', y: 42, 'text-anchor': 'middle', 'aria-hidden': 'true' });
-    node.append(hit, halo, face, head, shoulders, badge, badgeMark, label);
+    const label = svg('text', { class: 'pg-node-label', y: 38, 'text-anchor': 'middle', 'aria-hidden': 'true' });
+    node.append(hit, halo, face, monogram, badge, badgeMark, label);
     nodesLayer.append(node);
-    return { node, label, badgeMark };
+    return { node, label, badgeMark, monogram };
   }
 
   function syncControls() {
@@ -374,6 +420,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     }
     controls.hidden = timeline.hidden = !model.scenarios.length;
     follow.disabled = !input.run;
+    follow.hidden = !input.run;
     text(follow, STOPPED.has(model.runStatus)
       ? followLive ? 'Latest round' : 'Go to latest round'
       : input.run && followLive ? 'Following live' : 'Follow live');
@@ -381,6 +428,34 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     const stoppedLabel = { completed: 'Complete', complete: 'Complete', cancelled: 'Cancelled', failed: 'Failed', paused: 'Paused', interrupted: 'Interrupted' }[model.runStatus];
     text(summary, !input.run ? 'Prepared · no decisions yet' : `${completion}${model.active ? ` · ${model.active} in progress` : ''}${stoppedLabel ? ` · ${stoppedLabel}` : ''}`);
     summary.dataset.live = String(Boolean(model.active));
+    const config = (input.bundle || input.run?.manifest)?.definition?.runConfig;
+    text(resource, `${model.nodes.length} sampled voices${config ? ` · ${config.concurrency} requests at a time` : ''}`);
+    const groups = [{ id: 'all', label: 'Everyone', count: model.nodes.length },
+      ...STAKEHOLDER_GROUPS.map(group => ({ ...group, count: model.nodes.filter(node => node.group === group.id).length })).filter(group => group.count)];
+    const ids = new Set(groups.map(group => group.id));
+    for (const [key, element] of groupButtons) if (!ids.has(key)) { element.remove(); groupButtons.delete(key); }
+    if (!ids.has(filterGroup)) filterGroup = 'all';
+    for (const group of groups) {
+      let control = groupButtons.get(group.id);
+      if (!control) {
+        control = button('pg-group-filter', ''); control.dataset.group = group.id;
+        control.append(html('span'), html('span', 'pg-group-count'));
+        groupButtons.set(group.id, control); groupFilters.append(control);
+      }
+      text(control.firstElementChild, group.label); text(control.lastElementChild, group.count);
+      control.setAttribute('aria-pressed', String(filterGroup === group.id));
+    }
+  }
+
+  function matches(data) {
+    if (filterGroup !== 'all' && data.group !== filterGroup) return false;
+    if (stateFilter.value === 'active' && !data.active) return false;
+    if (stateFilter.value === 'committed' && !data.committed) return false;
+    if (stateFilter.value === 'constrained' && data.state !== 'constrained') return false;
+    const query = search.value.trim().toLowerCase();
+    const searchable = [data.label, data.actorId, data.sourceLabel, data.group,
+      ...(data.actor.facts || []).map(fact => String(fact.value))].join(' ').toLowerCase();
+    return !query || query.split(/\s+/).every(word => searchable.includes(word));
   }
 
   function layout() {
@@ -390,60 +465,80 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       groupElements.clear();
       return;
     }
-    const width = Math.max(260, Math.round(viewport.clientWidth || root.clientWidth || 760));
-    const minHeight = Math.max(350, viewport.clientHeight || 390);
-    const groups = [...new Set([...ROLES, ...topology.nodes.map(node => node.actor ? node.role || 'person' : 'model')])]
-      .map(role => ({ role, nodes: topology.nodes.filter(node => (node.actor ? node.role || 'person' : 'model') === role) }))
+    const width = Math.max(280, Math.round(viewport.clientWidth || root.clientWidth || 760));
+    const minHeight = Math.max(350, viewport.clientHeight || 390) / zoom;
+    const logicalWidth = width / Math.min(zoom, 1);
+    const visible = new Set(model.nodes.filter(matches).map(node => node.actorId));
+    for (const [key, element] of actorElements) {
+      element.node.toggleAttribute('hidden', !visible.has(key));
+      element.node.tabIndex = visible.has(key) ? 0 : -1;
+    }
+    if (shown && !visible.has(shown)) closePopup();
+    noMatches.hidden = !model.nodes.length || visible.size > 0;
+    text(visibleSummary, `${visible.size} of ${model.nodes.length} stakeholders in view`);
+    const groups = [...STAKEHOLDER_GROUPS.map(group => ({ role: group.id, label: group.label, color: group.role,
+      nodes: topology.nodes.filter(node => node.actor && visible.has(node.id) && stakeholderGroup(node) === group.id) })),
+    { role: 'model', label: 'Modeled entities', color: 'person', nodes: topology.nodes.filter(node => !node.actor) }]
       .filter(group => group.nodes.length);
-    const wide = width >= 660, gap = 12, inset = 14;
+    const wide = logicalWidth >= 760, gap = 18, inset = 20;
     const customer = groups.find(group => group.role === 'customer'), others = groups.filter(group => group !== customer);
     let height = minHeight, y = inset;
     const boxes = [];
-    const columnsFor = (count, boxWidth) => Math.max(1, Math.min(Math.ceil(Math.sqrt(count)), Math.floor((boxWidth - 28) / 88)));
+    const columnsFor = (count, boxWidth) => Math.max(1, Math.min(count, Math.floor((boxWidth - 28) / 64)));
     const groupHeight = (group, boxWidth) => {
       const columns = columnsFor(group.nodes.length, boxWidth);
-      return 34 + Math.ceil(group.nodes.length / columns) * 78;
+      return 56 + Math.ceil(group.nodes.length / columns) * 72;
     };
     if (wide && customer && others.length) {
-      const leftWidth = Math.floor((width - inset * 2 - gap) * 0.60), rightWidth = width - inset * 2 - gap - leftWidth;
-      const rightHeights = others.map(group => groupHeight(group, rightWidth));
-      height = Math.max(minHeight, groupHeight(customer, leftWidth) + inset * 2, rightHeights.reduce((a, b) => a + b, 0) + gap * (others.length - 1) + inset * 2);
-      boxes.push({ ...customer, x: inset, y: inset, width: leftWidth, height: height - inset * 2 });
-      others.forEach((group, index) => {
-        boxes.push({ ...group, x: inset + leftWidth + gap, y, width: rightWidth, height: rightHeights[index] });
-        y += rightHeights[index] + gap;
+      const leftWidth = Math.floor((logicalWidth - inset * 2 - gap) * 0.48);
+      const rightWidth = logicalWidth - inset * 2 - gap - leftWidth;
+      const columns = rightWidth >= 470 ? 2 : 1;
+      const boxWidth = (rightWidth - (columns - 1) * gap) / columns;
+      const bottoms = Array(columns).fill(inset);
+      others.forEach(group => {
+        const column = bottoms.indexOf(Math.min(...bottoms));
+        const boxHeight = groupHeight(group, boxWidth);
+        boxes.push({ ...group, x: inset + leftWidth + gap + column * (boxWidth + gap), y: bottoms[column], width: boxWidth, height: boxHeight });
+        bottoms[column] += boxHeight + gap;
       });
+      height = Math.max(minHeight, groupHeight(customer, leftWidth) + inset * 2, Math.max(...bottoms) - gap + inset);
+      boxes.unshift({ ...customer, x: inset, y: inset, width: leftWidth, height: height - inset * 2 });
     } else {
       for (const group of groups) {
-        const boxHeight = groupHeight(group, width - inset * 2);
-        boxes.push({ ...group, x: inset, y, width: width - inset * 2, height: boxHeight });
+        const boxHeight = groupHeight(group, logicalWidth - inset * 2);
+        boxes.push({ ...group, x: inset, y, width: logicalWidth - inset * 2, height: boxHeight });
         y += boxHeight + gap;
       }
       height = Math.max(minHeight, y - gap + inset);
     }
-    canvas.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    canvas.style.height = `${height}px`;
+    canvas.setAttribute('viewBox', `0 0 ${logicalWidth} ${height}`);
+    canvas.style.width = `${logicalWidth * zoom}px`;
+    canvas.style.height = `${height * zoom}px`;
     positions = new Map();
     const roles = new Set(boxes.map(box => box.role));
     for (const [role, element] of groupElements) if (!roles.has(role)) { element.node.remove(); groupElements.delete(role); }
     for (const box of boxes) {
       let group = groupElements.get(box.role);
       if (!group) {
-        const node = svg('g', { class: 'pg-cluster', 'data-role': ROLES.includes(box.role) ? box.role : 'person' });
-        const background = svg('rect', { rx: 24 }), label = svg('text', { class: 'pg-cluster-label' });
-        node.append(background, label); groupsLayer.append(node);
-        group = { node, background, label }; groupElements.set(box.role, group);
+        const node = svg('g', { class: 'pg-cluster', 'data-role': box.color, 'data-group': box.role });
+        const background = svg('rect', { rx: 22 }), label = svg('text', { class: 'pg-cluster-label' });
+        const progress = svg('text', { class: 'pg-cluster-progress' });
+        node.append(background, label, progress); groupsLayer.append(node);
+        group = { node, background, label, progress }; groupElements.set(box.role, group);
       }
       for (const key of ['x', 'y', 'width', 'height']) group.background.setAttribute(key, box[key]);
       group.label.setAttribute('x', box.x + 18); group.label.setAttribute('y', box.y + 26);
-      text(group.label, `${box.role === 'model' ? 'Modeled entities' : `${ROLE_LABELS[box.role] || 'Person'}${box.nodes.length === 1 ? '' : 's'}`} · ${box.nodes.length}`);
+      text(group.label, `${box.label} · ${box.nodes.length}`);
+      group.progress.setAttribute('x', box.x + 18); group.progress.setAttribute('y', box.y + 43);
+      const committed = model.nodes.filter(node => node.group === box.role && visible.has(node.actorId) && node.committed).length;
+      text(group.progress, input.run ? `${committed} saved decisions in this round` : 'Sample records · ready to explore');
       const columns = columnsFor(box.nodes.length, box.width);
       const rows = Math.ceil(box.nodes.length / columns);
-      const rowHeight = (box.height - 34) / rows;
+      const rowHeight = (box.height - 56) / rows;
       box.nodes.forEach((node, index) => {
         const row = Math.floor(index / columns), rowCount = Math.min(columns, box.nodes.length - row * columns);
-        const x = box.x + box.width / 2 + (index % columns - (rowCount - 1) / 2) * Math.min(104, (box.width - 28) / columns);
-        const py = box.y + 34 + rowHeight * row + rowHeight / 2 - 8;
+        const x = box.x + box.width / 2 + (index % columns - (rowCount - 1) / 2) * Math.min(90, (box.width - 28) / columns);
+        const py = box.y + 56 + rowHeight * row + rowHeight / 2 - 8;
         positions.set(node.id, { x, y: py });
         const element = node.actor ? actorElements.get(node.id)?.node : hubElements.get(node.id);
         element?.setAttribute('transform', `translate(${x},${py})`);
@@ -451,6 +546,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     }
     for (const edge of topology.edges) {
       const from = positions.get(edge.from), to = positions.get(edge.to), element = edgeElements.get(edge.id);
+      element?.toggleAttribute('hidden', !from || !to);
       if (!from || !to || !element) continue;
       element.setAttribute('d', `M${from.x},${from.y} Q${(from.x + to.x) / 2},${Math.min(from.y, to.y) - 24} ${to.x},${to.y}`);
     }
@@ -468,8 +564,10 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       let element = actorElements.get(data.actorId);
       if (!element) { element = buildActor(data); actorElements.set(data.actorId, element); }
       element.node.dataset.role = ROLES.includes(data.role) ? data.role : 'person';
+      element.node.dataset.group = data.group;
       element.node.dataset.state = data.state; element.node.dataset.active = String(data.active);
-      text(element.label, data.label);
+      text(element.label, data.label.length > 15 ? `${data.label.slice(0, 14)}…` : data.label);
+      text(element.monogram, data.label.split(/\s+/).slice(0, 2).map(word => word.charAt(0)).join('').toUpperCase());
       const scenario = model.scenarios.find(item => item.scenarioId === model.selected.scenarioId);
       element.node.setAttribute('aria-label', `${data.label}. ${data.sourceLabel}. ${data.statusLabel}. ${scenario?.label || 'Prepared option'}, round ${model.selected.round}. Press Enter to pin details.`);
       text(element.badgeMark, data.committed ? data.state === 'neutral' ? '−' : data.state === 'constrained' ? '!' : '✓'
@@ -478,8 +576,9 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     empty.hidden = Boolean(model.nodes.length);
     legend.hidden = !model.nodes.length;
     const bundle = input.bundle || input.run?.manifest;
-    const nextTopology = graphTopology(bundle, model.nodes.map(node => node.actor));
-    const nextKey = JSON.stringify([nextTopology.nodes.map(node => [node.id, node.role, node.actor, node.label]), nextTopology.edges]);
+    const nextTopology = graphTopology(bundle, model.nodes.map(node => node.actor), input.run, model.selected);
+    const nextKey = JSON.stringify([nextTopology.nodes.map(node => [node.id, node.role, node.actor, node.label]), nextTopology.edges,
+      model.nodes.filter(matches).map(node => node.actorId)]);
     if (nextKey !== topologyKey) {
       topology = nextTopology; topologyKey = nextKey;
       for (const element of hubElements.values()) element.remove();
@@ -500,9 +599,13 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       }
       layout();
     }
+    for (const [groupId, group] of groupElements) {
+      const visibleNodes = model.nodes.filter(node => node.group === groupId && matches(node));
+      text(group.progress, input.run ? `${visibleNodes.filter(node => node.committed).length} saved decisions in this round` : 'Sample records · ready to explore');
+    }
     text(connectionNote, topology.edges.length
-      ? 'Connections represent modeled operational relationships, not social influence.'
-      : 'Grouped by role. This saved model has no relationship edges; no connections or social influence are inferred.');
+      ? 'Lines show saved operational requests or declared model relationships, not inferred social influence.'
+      : 'Grouped by source role, not a social network. Connections appear only for saved operational requests. Sampled perspectives, not a whole-company forecast.');
     updatePopup();
   }
 
@@ -511,6 +614,13 @@ export function createPeopleGraph(root, { onInspect } = {}) {
     if (!target || !root.contains(target)) return;
     if (target === follow) {
       setFollowing(!followLive); if (followLive) { pinned = null; dismissed = null; } render();
+    } else if (target === zoomIn || target === zoomOut || target === zoomReset) {
+      zoom = target === zoomReset ? 1 : Math.max(0.8, Math.min(1.6, Math.round((zoom + (target === zoomIn ? 0.2 : -0.2)) * 10) / 10));
+      text(zoomReset, `${Math.round(zoom * 100)}%`);
+      zoomOut.disabled = zoom <= 0.8; zoomIn.disabled = zoom >= 1.6;
+      layout();
+    } else if (target.classList.contains('pg-group-filter')) {
+      filterGroup = target.dataset.group; closePopup(); topologyKey = ''; render();
     } else if (target.dataset.scenarioId) {
       selected = { ...model.selected, scenarioId: target.dataset.scenarioId }; setFollowing(false); render();
     } else if (target.dataset.round) {
@@ -527,6 +637,8 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       else { pinned = actorId; dismissed = null; setFollowing(false); updatePopup(); }
     }
   }, listeners);
+  search.addEventListener('input', () => { closePopup(); topologyKey = ''; render(); }, listeners);
+  stateFilter.addEventListener('change', () => { closePopup(); topologyKey = ''; render(); }, listeners);
   root.addEventListener('keydown', event => {
     const node = event.target.closest('[data-actor-id]');
     if (node && (event.key === 'Enter' || event.key === ' ')) {
@@ -584,6 +696,7 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       const nextIdentity = JSON.stringify([bundle?.definition?.experimentId, bundle?.definition?.version, value.run?.runId || null]);
       if (identity !== null && identity !== nextIdentity) {
         closePopup(); focused = null; dismissed = null; selected = null; setFollowing(true);
+        filterGroup = 'all'; search.value = ''; stateFilter.value = 'all'; topologyKey = '';
       }
       identity = nextIdentity; input = value; render();
     },
@@ -592,8 +705,9 @@ export function createPeopleGraph(root, { onInspect } = {}) {
       destroyed = true; controller.abort(); observer?.disconnect();
       clearTimeout(hideTimer); win.cancelAnimationFrame(resizeFrame);
       root.replaceChildren(); root.classList.remove('people-graph');
-      for (const map of [actorElements, hubElements, edgeElements, groupElements, scenarioButtons, roundButtons, positions]) map.clear();
+      for (const map of [actorElements, hubElements, edgeElements, groupElements, scenarioButtons, roundButtons, groupButtons, positions]) map.clear();
       input = {}; topology = { nodes: [], edges: [] }; model = derivePeopleGraphState();
     },
   };
 }
+import { STAKEHOLDER_GROUPS, stakeholderGroup } from './business-insights.js';

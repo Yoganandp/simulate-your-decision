@@ -23,10 +23,34 @@
 }
 .people-graph button:disabled { cursor: default; opacity: 0.55; }
 .people-graph button:focus-visible,
+.people-graph input:focus-visible,
+.people-graph select:focus-visible,
 .people-graph .pg-node:focus-visible {
   outline: 2px solid var(--pg-blue);
   outline-offset: 4px;
 }
+.pg-map-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 24px 20px 14px; }
+.pg-eyebrow { color: var(--pg-muted); font-size: 9px; font-weight: 650; letter-spacing: 0.12em; }
+.pg-map-heading h3 { margin: 5px 0 0; font-size: 19px; font-weight: 550; letter-spacing: -0.4px; }
+.pg-resource { padding: 7px 10px; border: 1px solid var(--pg-line); border-radius: 9px; color: var(--pg-muted); font-size: 10px; white-space: nowrap; }
+.pg-navigation { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 0 16px; }
+.pg-navigation .pg-controls { flex: 1 1 260px; }
+.pg-navigation .pg-timeline { padding-top: 8px; }
+.pg-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 0 20px 12px; }
+.pg-search, .pg-state-filter { height: 44px; min-width: 0; border: 1px solid var(--pg-line); border-radius: 10px; background: var(--pg-paper); color: var(--pg-ink); font: inherit; padding: 9px 12px; }
+.pg-search { flex: 1 1 200px; }
+.pg-search::placeholder { color: var(--pg-muted); }
+.pg-state-filter { max-width: 100%; }
+.pg-zoom { display: flex; border: 1px solid var(--pg-line); border-radius: 10px; overflow: hidden; }
+.people-graph .pg-zoom button { min-width: 44px; min-height: 44px; border: 0; background: var(--pg-paper); color: var(--pg-ink); font-size: 17px; }
+.people-graph .pg-zoom .pg-zoom-reset { font-size: 11px; font-variant-numeric: tabular-nums; }
+.people-graph .pg-zoom button:hover { background: oklch(0.95 0.013 265); }
+.pg-group-filters { display: flex; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; gap: 6px; padding: 0 20px 16px; }
+.people-graph .pg-group-filter { display: inline-flex; flex-shrink: 0; white-space: nowrap; align-items: center; gap: 8px; min-height: 44px; padding: 7px 11px; border: 1px solid transparent; border-radius: 999px; background: transparent; color: var(--pg-muted); font-size: 11px; }
+.pg-group-count { padding: 0 5px; border-radius: 5px; background: oklch(0.935 0.01 265); font-size: 10px; font-variant-numeric: tabular-nums; }
+.people-graph .pg-group-filter[aria-pressed="true"] { border-color: oklch(0.76 0.055 270); background: oklch(0.96 0.018 270); color: var(--pg-blue); font-weight: 600; }
+.people-graph .pg-group-filter:hover { background: oklch(0.96 0.01 265); }
+.pg-visible-summary { display: block; margin-top: 10px; color: var(--pg-muted); font-size: 10px; }
 
 .pg-controls,
 .pg-timeline,
@@ -103,7 +127,7 @@
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: oklch(0.83 0.025 265) transparent;
-  background-color: oklch(0.986 0.006 250);
+  background-color: oklch(0.975 0.007 260);
   background-image: radial-gradient(oklch(0.76 0.032 258 / 0.24) 0.7px, transparent 0.9px);
   background-size: 18px 18px;
 }
@@ -113,8 +137,11 @@
 .people-graph [data-role="supplier"] { --pg-role: oklch(0.46 0.095 68); --pg-tint: oklch(0.934 0.059 78); --pg-wash: oklch(0.972 0.025 78 / 0.85); }
 .people-graph [data-role="reseller"] { --pg-role: oklch(0.46 0.12 323); --pg-tint: oklch(0.928 0.035 323); --pg-wash: oklch(0.965 0.018 323 / 0.83); }
 .people-graph [data-role="person"] { --pg-role: oklch(0.46 0.03 260); --pg-tint: oklch(0.93 0.017 260); --pg-wash: oklch(0.96 0.009 260 / 0.8); }
-.pg-cluster rect { fill: var(--pg-wash); stroke: oklch(1 0 0 / 0.85); stroke-width: 1; }
+.people-graph [data-group="leadership"] { --pg-role: oklch(0.45 0.15 290); --pg-tint: oklch(0.94 0.035 290); }
+.people-graph [data-group="management"] { --pg-role: oklch(0.43 0.10 221); --pg-tint: oklch(0.93 0.035 221); }
+.pg-cluster rect { fill: oklch(0.997 0.003 260 / 0.85); stroke: oklch(0.89 0.014 260); stroke-width: 1; }
 .pg-cluster-label { fill: var(--pg-role); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+.pg-cluster-progress { fill: var(--pg-muted); font-size: 9px; }
 .pg-edge { stroke: oklch(0.69 0.06 265 / 0.52); stroke-width: 1.35; fill: none; }
 .pg-node { cursor: pointer; outline: none; }
 .pg-node-hit { fill: transparent; pointer-events: all; }
@@ -122,7 +149,8 @@
 .pg-node-face { fill: var(--pg-tint); stroke: oklch(1 0 0); stroke-width: 2; filter: drop-shadow(0 2px 2px oklch(0.42 0.04 255 / 0.10)); }
 .pg-person-head,
 .pg-person-body { fill: var(--pg-role); opacity: 0.78; }
-.pg-node-label { fill: var(--pg-ink); font-size: 11px; font-weight: 500; }
+.pg-monogram { fill: var(--pg-role); font-size: 13px; font-weight: 650; pointer-events: none; }
+.pg-node-label { fill: var(--pg-muted); font-size: 9px; font-weight: 500; }
 .pg-node:hover .pg-node-halo,
 .pg-node:focus-visible .pg-node-halo,
 .pg-node[data-pinned="true"] .pg-node-halo { stroke: var(--pg-role); }
@@ -194,6 +222,13 @@
   50% { opacity: 0.9; stroke-width: 2.5; }
 }
 @media (max-width: 680px) {
+  .pg-map-heading { flex-wrap: wrap; padding: 20px 12px 14px; gap: 10px; }
+  .pg-map-heading h3 { font-size: 17px; }
+  .pg-filters, .pg-group-filters { padding-inline: 12px; }
+  .pg-group-filters { gap: 3px; }
+  .people-graph .pg-group-filter { padding-inline: 8px; font-size: 10px; }
+  .pg-search { flex-basis: 100%; }
+  .pg-state-filter { flex: 1; }
   .pg-controls { align-items: flex-start; flex-wrap: wrap; gap: 8px; }
   .pg-controls, .pg-timeline, .pg-footer { padding-inline: 12px; }
   .pg-scenarios { flex: 1 1 100%; }
@@ -209,7 +244,7 @@
 }
 @media (forced-colors: active) {
   .pg-node-face, .pg-node-badge { fill: Canvas; stroke: CanvasText; }
-  .pg-person-head, .pg-person-body, .pg-node-label, .pg-cluster-label, .pg-node-badge-mark { fill: CanvasText; }
+  .pg-person-head, .pg-person-body, .pg-monogram, .pg-node-label, .pg-cluster-label, .pg-cluster-progress, .pg-node-badge-mark { fill: CanvasText; }
   .pg-node-halo, .pg-edge, .pg-cluster rect { stroke: CanvasText; }
   .pg-cluster rect { fill: Canvas; }
   .people-graph button[aria-pressed="true"] { outline: 2px solid Highlight; }

@@ -182,12 +182,21 @@ test("prepares immutable evidence-linked, model-ready options with declared cost
   assert.deepEqual(definition.scenarios.map(s => [s.policy.thresholdCents, s.policy.shippingFeeCents]), [[5000, 795], [7500, 395]]);
   assert.deepEqual(draft.questions, []);
   assert.ok(!draft.warnings.some(warning => /require review|No unambiguous|unknown.*cost/i.test(warning)));
-  assert.deepEqual(draft.estimate, { plannedActions: 66, maxAttempts: 133 });
-  assert.deepEqual(definition.runConfig, { provider: "copilot", model: "mai-code-1.1-flash", concurrency: 4,
-    attemptCap: 320, deadlineMs: 900000, callTimeoutMs: 60000, repetitions: 1 });
+  assert.deepEqual(draft.estimate, { plannedActions: 378, maxAttempts: 757 });
+  assert.deepEqual(definition.runConfig, { provider: "copilot", model: "mai-code-1.1-flash", concurrency: 2,
+    attemptCap: 757, deadlineMs: 7200000, callTimeoutMs: 60000, repetitions: 1 });
   assert.equal(definition.horizon.steps, 3);
   assert.deepEqual(Object.fromEntries(["customer", "employee", "supplier", "reseller"].map(role =>
-    [role, inputs.actors.filter(actor => actor.role === role).length])), { customer: 8, employee: 1, supplier: 1, reseller: 1 });
+    [role, inputs.actors.filter(actor => actor.role === role).length])), { customer: 32, employee: 22, supplier: 5, reseller: 4 });
+  assert.ok(Buffer.byteLength(JSON.stringify({ definition, inputs })) < 3_000_000);
+  for (const [role, coverage] of Object.entries(inputs.snapshot.coverage.population)) {
+    assert.equal(coverage.selected, inputs.actors.filter(actor => actor.role === role).length);
+    assert.ok(coverage.eligible >= coverage.selected && coverage.source >= coverage.eligible);
+  }
+  const titles = inputs.actors.filter(actor => actor.role === "employee").map(actor => actor.facts.find(fact => fact.field === "jobTitle").value);
+  assert.ok(titles.some(title => /chief|president|director/i.test(title)));
+  assert.ok(titles.some(title => /manager|supervisor|lead/i.test(title)));
+  assert.match(draft.conversation.assumptions.join(" "), /2 concurrent.*120-minute/);
   for (const [id, expected] of [["a-fulfillment", 500], ["a-labor-rate", 2400]]) {
     const assumption = inputs.assumptions.find(item => item.assumptionId === id);
     assert.equal(assumption.value, expected);
@@ -211,7 +220,7 @@ test("prepares immutable evidence-linked, model-ready options with declared cost
   assert.ok(!Object.hasOwn(draft, "results"));
   assert.throws(() => { inputs.assumptions[0].value = 1; }, TypeError);
 
-  const legacy = await prepareExperiment({ decisionText, customerCount: 8, employeeCount: 1, supplierCount: 1, resellerCount: 1 });
+  const legacy = await prepareExperiment({ decisionText, customerCount: 32, employeeCount: 22, supplierCount: 5, resellerCount: 4 });
   assert.equal(legacy.definition.scenarios[0].label, "Baseline");
   assert.equal(legacy.inputs.assumptions.find(item => item.assumptionId === "a-fulfillment").value, null);
   assert.deepEqual(legacy.inputs.evidence, inputs.evidence);

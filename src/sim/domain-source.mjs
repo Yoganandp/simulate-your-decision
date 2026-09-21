@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { array, bytesHash, cents, check, integer, keys, seededOrder, stableHash, unique } from "./domain-common.mjs";
 import { SOURCE_COMMIT } from "../../scripts/fetch-data.mjs";
+import { employeeGroup } from "../../web/business-insights.js";
 
 const DATA = fileURLToPath(new URL("../../data/adventureworks/", import.meta.url));
 // The pinned download manifest remains authoritative; importing never repairs or replaces a source.
@@ -89,6 +90,11 @@ export function loadSample(seed, counts, cycles) {
     const historyEvidence = historical.flatMap(order => order.lines.map(line => line.sourceRow));
     selectedCustomers.push({ id: `customer-${key}`, sourceEntityId: `DimCustomer:${key}`, profileMode: "individual",
       label: `Sample customer record ${key}`, evidenceIds: [customerEvidence, existingEvidence],
+      facts: [["givenName", "FirstName", 4], ["familyName", "LastName", 6]].map(([field, sourceField, index]) => ({
+        field, value: row.fields[index], unit: "text",
+        evidenceIds: [addEvidence("DimCustomer.csv", row.row, key, `${sourceField}[${index}]`, row.fields[index], "text", null)],
+        assumptionIds: [],
+      })),
       firstPurchaseDate: row.fields[27].slice(0, 10), historicalOrderCount: historical.length,
       historicalLineCount: historyEvidence.length, orderIds: selected.map(order => `${key}:${order.id}`) });
     for (const order of selected) {
@@ -120,18 +126,33 @@ export function loadSample(seed, counts, cycles) {
     return { id: sale.productId, label: row.fields[5], unitPriceCents: sale.unitPriceCents, unitCostCents: sale.unitCostCents,
       evidenceIds, costEvidenceIds, assumptionIds: ["a-historical-prices", "a-historical-costs"] };
   });
-  const makeRole = (role, rows, file, idIndex, fields) => seededOrder(rows, `${seed}:${role}`, row => row.fields[idIndex]).slice(0, counts[role]).map(row => {
+  const makeRole = (role, rows, file, idIndex, fields, selected = null) => (selected ?? seededOrder(rows, `${seed}:${role}`, row => row.fields[idIndex]).slice(0, counts[role])).map(row => {
     const key = row.fields[idIndex];
     const facts = fields.map(([field, index]) => ({ field, value: row.fields[index], unit: "text",
       evidenceIds: [addEvidence(file, row.row, key, `${field}[${index}]`, row.fields[index], "text", null)], assumptionIds: [] }));
     return { id: `${role}-${key}`, role, profileMode: "individual", label: `Sample ${role} record ${key}`,
       sourceEntityId: `${file.replace(".csv", "")}:${key}`, facts };
   });
-  const operationalEmployees = employees.filter(row => row.fields[29] === "Current" && /shipping|purchasing|production|warehouse/i.test(`${row.fields[9]} ${row.fields[26]}`));
+  const currentEmployees = employees.filter(row => row.fields[29] === "Current");
+  const operationalEmployees = currentEmployees.filter(row => /shipping|purchasing|production|warehouse/i.test(`${row.fields[9]} ${row.fields[26]}`));
+  let selectedEmployees = null;
+  if (counts.employee > 4) {
+    const ordered = seededOrder(currentEmployees, `${seed}:employee`, row => row.fields[0]);
+    selectedEmployees = [];
+    for (const [group, requested] of [['leadership', Math.max(1, Math.round(counts.employee * 0.16))],
+      ['management', Math.max(1, Math.round(counts.employee * 0.32))], ['frontline', counts.employee]]) {
+      selectedEmployees.push(...ordered.filter(row => employeeGroup(row.fields[9], row.fields[26]) === group)
+        .slice(0, Math.min(requested, counts.employee - selectedEmployees.length)));
+    }
+    const selected = new Set(selectedEmployees);
+    selectedEmployees.push(...ordered.filter(row => !selected.has(row)).slice(0, counts.employee - selectedEmployees.length));
+  }
+  const eligibleVendors = vendors.filter(row => row.fields[5] === "1");
+  const eligibleResellers = resellers.filter(row => row.fields.length > 19);
   const operational = [
-    ...makeRole("employee", operationalEmployees, "DimEmployee.csv", 0, [["jobTitle", 9], ["department", 26]]),
-    ...makeRole("supplier", vendors.filter(row => row.fields[5] === "1"), "Vendor.csv", 0, [["sampleVendorName", 2]]),
-    ...makeRole("reseller", resellers.filter(row => row.fields.length > 19), "DimReseller.csv", 0, [["sampleResellerName", 5], ["businessType", 4]]),
+    ...makeRole("employee", operationalEmployees, "DimEmployee.csv", 0, [["givenName", 5], ["familyName", 6], ["jobTitle", 9], ["department", 26]], selectedEmployees),
+    ...makeRole("supplier", eligibleVendors, "Vendor.csv", 0, [["sampleVendorName", 2]]),
+    ...makeRole("reseller", eligibleResellers, "DimReseller.csv", 0, [["sampleResellerName", 5], ["businessType", 4]]),
   ];
   const coverageEvidenceIds = [
     addEvidence("FactInternetSales.csv", minDateRow, "coverage", "OrderDate[23]:minimum", minDate, "date", minDate, `Minimum over source rows 1..${saleRows.length}`),
@@ -142,6 +163,13 @@ export function loadSample(seed, counts, cycles) {
   return { sourceType: "AdventureWorks_sample", sourceFiles, products, customers: selectedCustomers,
     historicalOrders: selectedOrders, operational, evidence, asOf: maxDate,
     coverage: { minOrderDate: minDate, maxOrderDate: maxDate, sourceOrderLines: validLines, sourceDistinctOrders: orders.size,
+      population: {
+        customer: { source: customerRows.length, eligible: byCustomer.size, selected: selectedCustomers.length },
+        employee: { source: employees.length, eligible: counts.employee > 4 ? currentEmployees.length : operationalEmployees.length,
+          selected: operational.filter(actor => actor.role === "employee").length },
+        supplier: { source: vendors.length, eligible: eligibleVendors.length, selected: operational.filter(actor => actor.role === "supplier").length },
+        reseller: { source: resellers.length, eligible: eligibleResellers.length, selected: operational.filter(actor => actor.role === "reseller").length },
+      },
       retainedHistoricalOrders: selectedOrders.length, retainedHistoricalLines: selectedOrders.reduce((sum, order) => sum + order.lines.length, 0),
       historicalShippingPolicy: "unknown", inventory: "assumed", fulfillmentCost: "unknown",
       freightTreatment: "Historical line Freight is not assumed to be current fulfillment cost.",

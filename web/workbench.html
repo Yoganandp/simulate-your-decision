@@ -74,10 +74,10 @@
           <div class="settings-body">
             <div class="field-grid">
               <label class="wide">Experiment title<input id="experiment-title" data-draft maxlength="160" placeholder="Shipping policy review"></label>
-              <label>Sample customers<input id="customer-count" data-draft type="number" min="1" max="24" step="1" value="12" required></label>
-              <label>Employees<input id="employee-count" data-draft type="number" min="0" max="4" step="1" value="2" required></label>
-              <label>Suppliers<input id="supplier-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
-              <label>Resellers<input id="reseller-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
+              <label>Sample customers<input id="customer-count" data-draft type="number" min="1" max="32" step="1" value="12" required></label>
+              <label>Employees<input id="employee-count" data-draft type="number" min="0" max="22" step="1" value="2" required></label>
+              <label>Suppliers<input id="supplier-count" data-draft type="number" min="0" max="5" step="1" value="1" required></label>
+              <label>Resellers<input id="reseller-count" data-draft type="number" min="0" max="4" step="1" value="1" required></label>
               <label>Shopping cycles<input id="cycle-count" data-draft type="number" min="1" max="3" step="1" value="3" required></label>
               <label>Panel seed<input id="panel-seed" data-draft value="shipping-policy-demo" maxlength="120" required></label>
             </div>
@@ -93,7 +93,7 @@
               <div class="field-grid execution-fields">
                 <label>Concurrent calls<input id="concurrency" data-draft type="number" min="1" max="8" step="1" value="4" required></label>
                 <label>Hard attempt budget<input id="attempt-cap" data-draft type="number" min="1" max="1000" step="1" value="320" required></label>
-                <label>Run deadline (minutes)<input id="deadline-minutes" data-draft type="number" min="1" max="30" step="1" value="15" required></label>
+                <label>Run deadline (minutes)<input id="deadline-minutes" data-draft type="number" min="1" max="120" step="1" value="15" required></label>
                 <label>Call timeout (seconds)<input id="call-timeout" data-draft type="number" min="1" max="120" step="1" value="60" required></label>
               </div>
               <p class="hint">Every attempt counts, including repairs and failures. A hard cap is a ceiling, not a promised cost estimate. H0 uses one repetition per option.</p>

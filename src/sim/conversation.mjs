@@ -285,10 +285,10 @@ export async function prepareConversation(input) {
   try {
     draft = await domain.prepareExperiment({
       decisionText: interpreted.decisionText, title: "Option A vs Option B · Shipping",
-      customerCount: 8, employeeCount: 1, supplierCount: 1, resellerCount: 1, cycles: 3,
+      customerCount: 32, employeeCount: 22, supplierCount: 5, resellerCount: 4, cycles: 3,
       baseline: interpreted.policies[0], options: [{ label: "Option B", ...interpreted.policies[1] }],
-      runConfig: { provider: "copilot", model: "mai-code-1.1-flash", concurrency: 4,
-        attemptCap: 320, deadlineMs: 900000, callTimeoutMs: 60000, repetitions: 1 },
+      runConfig: { provider: "copilot", model: "mai-code-1.1-flash", concurrency: 2,
+        attemptCap: 757, deadlineMs: 7200000, callTimeoutMs: 60000, repetitions: 1 },
     }, { preset: "conversational-shipping-v1" });
   } catch {
     throw new SimulationError("CONVERSATION_PREPARATION_FAILED", "The shipping comparison could not be prepared from validated sample evidence. Check the local sample-data setup; no replacement evidence or results were generated.", 503);
@@ -296,12 +296,14 @@ export async function prepareConversation(input) {
   const conversation = interpreted.conversation;
   conversation.assumptions.push(
     "Unknown operating costs use illustrative presets: $5.00 fulfillment per completed order and $24.00/hour incremental labor. Neither is a measured source fact.",
-    "Illustrative panel: 8 sample customers, 1 employee, 1 supplier and 1 reseller over 3 shopping cycles, with one repetition (66 planned actor actions across two options); no population weighting or annualization.",
-    "Illustrative operating presets: 8 units per product; 9 base order slots per cycle; customer budgets at 1.5× scheduled merchandise plus $20 per cycle; $300 total reseller budget.",
+    `Bounded business panel: ${draft.inputs.actors.length} sample stakeholders, selected across customers, leadership, management, frontline staff, suppliers and resellers. Three shopping cycles, one repetition (${draft.estimate.plannedActions} planned actor actions across two options); no population weighting or annualization. Source and selected counts are shown separately.`,
+    "Resource limits: at most 2 concurrent model requests, 757 attempts including repairs and preflight, 60 seconds per call, and a 120-minute hard run deadline. This is a stop limit, not a completion-time estimate. Nothing starts until you select Run simulation.",
+    `Illustrative operating presets: 8 units per product; ${draft.inputs.initialState.baseCapacity} base order slots per cycle; customer budgets at 1.5× scheduled merchandise plus $20 per cycle; $300 total reseller budget.`,
     "Illustrative authority presets: up to 2 extra order slots per employee at 15 minutes each; 6 supplier units per response with a 1-cycle minimum lead time; up to 3 units per reseller order. Supply relationships are assumed; customer-to-customer influence is off.",
     "Pinned AdventureWorks sample records supply the frozen historical baskets, prices and available standard costs. They are sample business evidence, not your company data or current costs; genuinely missing product costs remain unknown.",
     "Shipping thresholds include orders exactly at the stated amount. Policy values are scenario inputs, not historical facts. The objective is panel contribution before tax, overhead and capital costs; no behavioral accuracy has been validated.",
     "Preset assumptions are applied automatically, not manually reviewed. Copilot mai-code-1.1-flash supplies live choices only when a run starts; preparation does not generate outcomes.",
+    "Employee titles determine display groups, not additional powers. Leadership, managers and frontline staff share the declared shipping-adapter actions. Morale, satisfaction, churn and wider-company forecasts are not modeled.",
   );
   return { ...draft, questions: [],
     warnings: draft.warnings.filter(warning => !PARSER_WARNINGS.some(prefix => warning.startsWith(prefix))),

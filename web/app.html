@@ -166,15 +166,17 @@
                 <button id="reconnect-button" class="button secondary" type="button" hidden>Reconnect</button>
               </div>
 
+              <p id="runtime-plan" class="runtime-plan"></p>
+
               <div id="simulation-views" class="simulation-views">
                 <div class="view-tabs" role="tablist" aria-label="Simulation view">
                   <button id="people-tab" type="button" role="tab" aria-selected="true" aria-controls="people-view" tabindex="0">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3"/><path d="M3 20v-2a6 6 0 0 1 12 0v2M16 5a3 3 0 0 1 0 6M21 20v-2a6 6 0 0 0-4-5.7"/></svg>
-                    People &amp; responses
+                    Business map
                   </button>
                   <button id="results-tab" type="button" role="tab" aria-selected="false" aria-controls="results-view" tabindex="-1">
                     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 19V9M12 19V4M19 19v-7M3 19h18"/></svg>
-                    Outcomes
+                    Business impact
                   </button>
                 </div>
 
@@ -186,6 +188,7 @@
                 <div id="results-view" class="results-view" role="tabpanel" aria-labelledby="results-tab" hidden>
                   <div id="outcome-summary" class="outcome-summary"></div>
                   <div id="outcome-cards" class="outcome-cards"></div>
+                  <div id="business-impact"></div>
                   <p id="outcome-notes" class="source-note"></p>
                 </div>
               </div>

@@ -19,7 +19,7 @@
     "test:engine": "node test/engine-test.mjs",
     "test": "npm run test:legacy && npm run test:simulations",
     "test:legacy": "node test/ai-engine-unit.mjs && node test/scenario-smoke.mjs && node test/retail-smoke.mjs",
-    "test:simulations": "node --test test/runtime-unit.mjs test/copilot-harness-unit.mjs test/domain-unit.mjs test/persistence-unit.mjs test/orchestration-unit.mjs test/local-access-unit.mjs test/legacy-regression.mjs test/http-integration.mjs test/walkthrough-unit.mjs test/conversation-unit.mjs test/people-graph-unit.mjs",
+    "test:simulations": "node --test --test-concurrency=1 test/runtime-unit.mjs test/copilot-harness-unit.mjs test/domain-unit.mjs test/persistence-unit.mjs test/orchestration-unit.mjs test/local-access-unit.mjs test/legacy-regression.mjs test/http-integration.mjs test/walkthrough-unit.mjs test/conversation-unit.mjs test/people-graph-unit.mjs test/business-insights-unit.mjs",
     "data": "node src/loadAdventureWorks.mjs",
     "overview": "node src/overview.mjs",
     "simulate": "node src/run.mjs",

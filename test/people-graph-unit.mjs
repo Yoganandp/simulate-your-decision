@@ -235,3 +235,32 @@ test('manifest bundle fallback works and empty input is safe to import without a
   assert.equal(derivePeopleGraphState({ run: run({ manifest: bundle }) }).nodes.length, 2);
   assert.deepEqual(derivePeopleGraphState().nodes, []);
 });
+
+test('a business-sized panel groups titles without inventing active people or decisions', () => {
+  const actors = Array.from({ length: 63 }, (_, index) => ({
+    id: `person-${index}`, role: index < 32 ? 'customer' : 'employee', label: `Sample record ${index}`,
+    facts: index === 32 ? [{ field: 'jobTitle', value: 'Chief Executive Officer' }]
+      : index === 33 ? [{ field: 'jobTitle', value: 'Production Manager' }] : [],
+  }));
+  const large = { ...bundle, inputs: { actors, graph: { edges: [] } } };
+  const model = derivePeopleGraphState({ bundle: large, run: run(), events: [
+    event(1, 'actor_started', { actorId: 'person-0', round: 1 }),
+    event(2, 'actor_started', { actorId: 'person-1', round: 1 }),
+  ] });
+  assert.equal(model.nodes.length, 63);
+  assert.equal(model.active, 2);
+  assert.equal(model.committed, 0);
+  assert.equal(model.nodes[32].group, 'leadership');
+  assert.equal(model.nodes[33].group, 'management');
+  assert.equal(model.nodes[34].group, 'frontline');
+});
+
+test('source-backed display names retain the sample record identity and have a legacy fallback', () => {
+  const named = structuredClone(bundle);
+  named.inputs.actors[0].facts = [{ field: 'givenName', value: 'Sample' }, { field: 'familyName', value: 'Customer' }];
+  const model = derivePeopleGraphState({ bundle: named });
+  assert.equal(model.nodes[0].label, 'Sample Customer');
+  assert.equal(model.nodes[0].sourceLabel, 'Sample customer record 1');
+  assert.equal(model.nodes[0].actorId, 'customer-1');
+  assert.equal(model.nodes[0].record, null);
+});
