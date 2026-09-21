@@ -1,4 +1,7 @@
 config/ai-provider.json
+node_modules/
+.simulation-data/
+.simulation-test-data/
 data/adventureworks/*
 !data/adventureworks/README.md
 out/*

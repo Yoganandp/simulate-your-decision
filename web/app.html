@@ -1,475 +1,252 @@
 <!doctype html>
-<html lang="en"><head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Decision Studio · AdventureWorks</title>
-<style>
-  :root{
-    --bg:#ffffff; --canvas:#faf9f8; --layer:#ffffff; --subtle:#f5f5f5; --subtle2:#efedeb;
-    --stroke:#e1dfdd; --stroke2:#d1d1d1; --divider:#edebe9;
-    --text:#242424; --text2:#616161; --text3:#8a8886;
-    --brand:#0f6cbd; --brand-hover:#115ea3; --brand-pressed:#0c3b5e; --brand-tint:#ebf3fc; --brand-tint2:#f6fafe;
-    --success:#107c10; --success-bg:#e7f6e7; --danger:#c50f1f; --danger-bg:#fdeced; --warning:#bc4b09; --warning-bg:#fff8e6;
-    --r-s:4px; --r-m:8px; --r-l:12px;
-    --sh2:0 1px 2px rgba(0,0,0,.07),0 0 1px rgba(0,0,0,.06);
-    --sh8:0 2px 8px rgba(0,0,0,.09),0 0 2px rgba(0,0,0,.06);
-    --sh16:0 4px 16px rgba(0,0,0,.12),0 0 2px rgba(0,0,0,.06);
-    --font:'Segoe UI Variable Text','Segoe UI',system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%}
-  body{margin:0;background:var(--canvas);color:var(--text);font:14px/1.5 var(--font);-webkit-font-smoothing:antialiased}
-  button{font:inherit;cursor:pointer}
-  .muted{color:var(--text2)} .tiny{font-size:12px}
-  /* app bar */
-  .appbar{height:56px;background:var(--layer);border-bottom:1px solid var(--divider);display:flex;align-items:center;gap:18px;padding:0 20px;position:sticky;top:0;z-index:20}
-  .brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
-  .brand .dot{width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#2899f5,#0f6cbd);box-shadow:var(--sh2)}
-  .tabs{display:flex;gap:2px;margin-left:8px}
-  .tab{border:0;background:transparent;color:var(--text2);padding:8px 14px;border-radius:var(--r-m);font-weight:600;font-size:13.5px;position:relative}
-  .tab:hover{background:var(--subtle);color:var(--text)}
-  .tab.active{color:var(--brand)}
-  .tab.active:after{content:"";position:absolute;left:12px;right:12px;bottom:-9px;height:2px;background:var(--brand);border-radius:2px}
-  .spacer{flex:1}
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);background:var(--subtle);border:1px solid var(--stroke);border-radius:999px;padding:4px 10px}
-  .pill .g{width:7px;height:7px;border-radius:50%;background:var(--success)}
-  /* layout */
-  main{max-width:1080px;margin:0 auto;padding:22px 20px 40px}
-  .view{display:none} .view.active{display:block}
-  h2{font-size:18px;font-weight:600;margin:0 0 3px} .sub{color:var(--text2);font-size:13px;margin:0 0 16px}
-  .card{background:var(--layer);border:1px solid var(--stroke);border-radius:var(--r-l);box-shadow:var(--sh2)}
-  .pad{padding:18px 20px}
-  /* compose / chat */
-  #chat{display:flex;flex-direction:column;gap:16px;min-height:calc(100vh - 250px);padding-bottom:14px}
-  .hero{margin:6vh auto 0;max-width:620px;text-align:center}
-  .hero .ic{font-size:30px}
-  .hero h1{font-size:24px;font-weight:600;margin:12px 0 8px}
-  .hero p{color:var(--text2);margin:0 auto;max-width:520px}
-  .chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:18px}
-  .chip{border:1px solid var(--stroke);background:var(--layer);color:var(--text);border-radius:999px;padding:8px 14px;font-size:13px;box-shadow:var(--sh2)}
-  .chip:hover{border-color:var(--brand);color:var(--brand);background:var(--brand-tint2)}
-  .msg{display:flex;gap:10px;max-width:760px}
-  .msg.user{align-self:flex-end;flex-direction:row-reverse}
-  .bubble{padding:11px 15px;border-radius:14px;box-shadow:var(--sh2);font-size:14px}
-  .msg.user .bubble{background:var(--brand);color:#fff;border-bottom-right-radius:4px}
-  .msg.bot .bubble{background:var(--layer);border:1px solid var(--stroke);border-bottom-left-radius:4px}
-  .av{width:30px;height:30px;border-radius:8px;flex:0 0 30px;display:flex;align-items:center;justify-content:center;font-size:14px;box-shadow:var(--sh2)}
-  .av.user{background:var(--subtle2)} .av.bot{background:linear-gradient(135deg,#2899f5,#0f6cbd);color:#fff}
-  /* thinking / CoT */
-  .think{max-width:760px;align-self:flex-start;width:100%}
-  .think .head{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--divider)}
-  .think .head .t{font-weight:600} .think .head .r{margin-left:auto;display:flex;gap:8px}
-  .btn{border:1px solid var(--stroke);background:var(--layer);color:var(--text);border-radius:var(--r-m);padding:6px 12px;font-size:13px;font-weight:600}
-  .btn:hover{background:var(--subtle)} .btn.brand{background:var(--brand);border-color:var(--brand);color:#fff}
-  .btn.brand:hover{background:var(--brand-hover)}
-  .steps{padding:12px 16px;display:flex;flex-direction:column;gap:9px}
-  .step{display:flex;align-items:flex-start;gap:10px;font-size:13.5px;color:var(--text2)}
-  .step .mk{width:18px;height:18px;flex:0 0 18px;border-radius:50%;border:2px solid var(--stroke2);margin-top:1px;display:flex;align-items:center;justify-content:center;font-size:11px}
-  .step.active .mk{border-color:var(--brand);color:var(--brand);animation:spin 1s linear infinite;border-right-color:transparent}
-  .step.done .mk{border-color:var(--success);background:var(--success);color:#fff}
-  .step.done{color:var(--text)} .step.active{color:var(--text)}
-  .step.done .mk::after{content:"✓";font-size:11px;color:#fff;font-weight:700}
-  .pill-m{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;margin:0 4px 3px 0;font-weight:600}
-  .pill-m.g{background:var(--success-bg);color:var(--success)} .pill-m.b{background:var(--danger-bg);color:var(--danger)} .pill-m.n{background:var(--subtle);color:var(--text2)}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  .prog{height:4px;background:var(--subtle);border-radius:3px;overflow:hidden;margin-top:6px}
-  .prog i{display:block;height:100%;width:0;background:var(--brand);transition:width .3s}
-  /* composer */
-  .composer-wrap{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(250,249,248,0),var(--canvas) 30%);padding-top:10px}
-  .composer{background:var(--layer);border:1px solid var(--stroke2);border-radius:16px;box-shadow:var(--sh8);padding:10px 12px}
-  .composer:focus-within{border-color:var(--brand);box-shadow:0 0 0 1px var(--brand),var(--sh8)}
-  .composer textarea{width:100%;border:0;outline:0;resize:none;font:inherit;color:var(--text);background:transparent;max-height:150px;min-height:24px;padding:6px 4px}
-  .composer .row{display:flex;align-items:center;gap:8px;margin-top:6px}
-  .opts{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--text2);font-size:12.5px}
-  select{font:inherit;font-size:12.5px;color:var(--text);background:var(--layer);border:1px solid var(--stroke);border-radius:var(--r-s);padding:4px 6px}
-  input[type=checkbox]{accent-color:var(--brand)}
-  .send{margin-left:auto;width:36px;height:36px;border-radius:10px;border:0;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;box-shadow:var(--sh2)}
-  .send:hover{background:var(--brand-hover)} .send:disabled{background:var(--stroke2);cursor:default}
-  .est{color:var(--text3);font-size:12px;padding:6px 4px 0}
-  /* report card */
-  .verdict{border-radius:var(--r-m);padding:13px 15px;margin:2px 0 12px;border:1px solid}
-  .verdict .vt{font-weight:600;font-size:15px;margin-bottom:2px}
-  .verdict.good{background:var(--success-bg);border-color:#bfe6bf} .verdict.good .vt{color:var(--success)}
-  .verdict.bad{background:var(--danger-bg);border-color:#f3c9cd} .verdict.bad .vt{color:var(--danger)}
-  .verdict.caution{background:var(--warning-bg);border-color:#f2e2ad} .verdict.caution .vt{color:var(--warning)}
-  .kgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-  .kpi{border:1px solid var(--stroke);border-radius:var(--r-m);padding:11px 12px;border-left:3px solid var(--stroke2)}
-  .kpi.improve{border-left-color:var(--success)} .kpi.worsen{border-left-color:var(--danger)} .kpi.neutral{border-left-color:var(--text3)}
-  .kpi .k{font-size:11px;color:var(--text2);text-transform:uppercase;letter-spacing:.03em}
-  .kpi .v{font-size:19px;font-weight:700;margin:2px 0} .kpi.improve .v{color:var(--success)} .kpi.worsen .v{color:var(--danger)}
-  .kpi .s{font-size:11.5px;color:var(--text2)}
-  details.more{margin-top:12px;border-top:1px solid var(--divider);padding-top:10px}
-  details.more>summary{cursor:pointer;font-weight:600;color:var(--brand);font-size:13px;list-style:none}
-  details.more>summary::-webkit-details-marker{display:none}
-  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:8px}
-  th,td{border:1px solid var(--stroke);padding:6px 9px;text-align:left} th{background:var(--subtle);color:var(--text2);font-weight:600}
-  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums} .pos{color:var(--success)} .neg{color:var(--danger)} .totalrow td{font-weight:700;background:var(--subtle)}
-  .crowdbar{display:flex;height:8px;border-radius:5px;overflow:hidden;border:1px solid var(--stroke);margin-top:10px;max-width:420px}
-  /* business */
-  .stat{border:1px solid var(--stroke);border-radius:var(--r-m);padding:13px 14px;background:var(--layer)}
-  .stat .v{font-size:22px;font-weight:700} .stat .k{font-size:11.5px;color:var(--text2);text-transform:uppercase;letter-spacing:.03em}
-  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-  .barrow{display:flex;align-items:center;gap:10px;margin:7px 0}
-  .barrow .nm{width:150px;color:var(--text2);font-size:13px} .barrow .tk{flex:1;height:9px;background:var(--subtle);border-radius:6px;overflow:hidden}
-  .barrow .fl{height:100%;background:var(--brand)} .barrow .pc{width:44px;text-align:right;color:var(--text2);font-size:12.5px}
-  /* simulation */
-  #simwrap{position:relative;height:calc(100vh - 150px);border:1px solid var(--stroke);border-radius:var(--r-l);overflow:hidden;background:
-     radial-gradient(circle at 50% 40%,#ffffff, #f7f6f5)}
-  #graph{display:block;width:100%;height:100%;cursor:grab} #graph:active{cursor:grabbing}
-  .sim-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--text2);padding:30px}
-  .sim-top{position:absolute;top:12px;left:12px;display:flex;gap:8px;align-items:center}
-  .sim-chip{background:var(--layer);border:1px solid var(--stroke);border-radius:999px;padding:6px 12px;font-size:12.5px;box-shadow:var(--sh2);font-weight:600}
-  .legend{position:absolute;bottom:12px;left:12px;display:flex;gap:14px;background:var(--layer);border:1px solid var(--stroke);border-radius:var(--r-m);padding:8px 12px;box-shadow:var(--sh2);font-size:12px}
-  .legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:5px;vertical-align:middle}
-  .zoom{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px}
-  .zoom button{width:32px;height:32px;border-radius:8px;border:1px solid var(--stroke);background:var(--layer);box-shadow:var(--sh2);font-size:16px;color:var(--text)}
-  .zoom button:hover{background:var(--subtle)}
-  .inspect{position:absolute;top:0;right:0;height:100%;width:340px;background:var(--layer);border-left:1px solid var(--stroke);box-shadow:var(--sh16);transform:translateX(100%);transition:transform .22s;overflow:auto;z-index:5}
-  .inspect.open{transform:none}
-  .inspect .ih{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--divider)}
-  .inspect .ih .x{margin-left:auto;border:0;background:transparent;font-size:18px;color:var(--text2)}
-  .ibody{padding:14px 16px} .ibody h4{margin:0 0 2px;font-size:15px} .ibody .ctx{color:var(--text2);font-size:12.5px;margin-bottom:10px}
-  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;font-weight:600}
-  .tag.support{background:var(--success-bg);color:var(--success)} .tag.oppose{background:var(--danger-bg);color:var(--danger)} .tag.neutral{background:var(--subtle);color:var(--text2)}
-  .kv{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0} .kv span{font-size:11.5px;background:var(--subtle);border:1px solid var(--stroke);border-radius:5px;padding:2px 7px}
-  .kv span i{color:var(--text2);font-style:normal}
-  .quote{background:var(--brand-tint2);border:1px solid #dce9f7;border-radius:var(--r-m);padding:10px 12px;font-size:13px;margin:8px 0}
-  .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--text3);margin:12px 0 4px}
-  pre{margin:0;background:#f7f6f5;border:1px solid var(--stroke);border-radius:6px;padding:9px;font:11.5px/1.45 ui-monospace,Consolas,monospace;color:#3b3a39;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-word}
-</style></head>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>Copilot Simulations (prototype)</title>
+  <link rel="stylesheet" href="/simulations.css">
+  <script type="module" src="/simulations.js"></script>
+</head>
 <body>
-  <div class="appbar">
-    <div class="brand"><span class="dot"></span> Decision Studio</div>
-    <div class="tabs">
-      <button class="tab active" data-tab="compose">Compose</button>
-      <button class="tab" data-tab="business">Business</button>
-      <button class="tab" data-tab="simulation">Simulation</button>
-    </div>
-    <div class="spacer"></div>
-    <span class="pill"><span class="g"></span> <span id="statusText">ready</span></span>
-  </div>
+  <a class="skip-link" href="#main">Skip to experiment</a>
+  <header class="app-header">
+    <a class="brand" href="/" aria-label="Copilot Simulations home">
+      <span class="brand-mark" aria-hidden="true">S</span>
+      <span>Copilot Simulations <span class="prototype">(prototype)</span></span>
+    </a>
+    <nav class="header-actions" aria-label="Workspace">
+      <button type="button" id="new-experiment" class="button subtle">New experiment</button>
+      <button type="button" id="history-button" class="button secondary">History</button>
+    </nav>
+  </header>
 
-  <main>
-    <!-- COMPOSE -->
-    <section class="view active" id="view-compose">
-      <div id="chat">
-        <div class="hero" id="hero">
-          <div class="ic">🚲</div>
-          <h1>You're the CEO of AdventureWorks Cycles</h1>
-          <p>An international bike &amp; accessories retailer. Write one concrete decision — what changes, who it affects, and any important numbers — and I'll simulate how the company reacts.</p>
-          <div class="chips" id="presetChips"></div>
+  <main id="main">
+    <div class="workspace-heading">
+      <p class="eyebrow">A decision workspace, not a crystal ball</p>
+      <p class="workspace-note">AdventureWorks sample business data <span aria-hidden="true">·</span> Shipping policy</p>
+    </div>
+    <nav class="step-nav" aria-label="Experiment workflow">
+      <button type="button" data-section="prepare-section" aria-current="step"><span>01</span> Prepare</button>
+      <button type="button" data-section="run-section" disabled><span>02</span> Simulate</button>
+      <button type="button" data-section="compare-section" disabled><span>03</span> Compare &amp; decide</button>
+    </nav>
+
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="error" class="notice error" role="alert" hidden></div>
+
+    <section id="prepare-section" aria-labelledby="prepare-heading">
+      <div class="hero">
+        <div>
+          <p class="eyebrow">Explore the decision before the commitment</p>
+          <h1 id="prepare-heading">What decision are<br class="desktop-break"> you considering?</h1>
+          <p class="hero-copy">Test a shipping policy with a shared panel of sample customers. Inspect their simulated choices, compare the consequences, and shape a better pilot.</p>
+          <p class="trust-line"><span aria-hidden="true">↗</span> Simulate decisions. Not a prediction guarantee.</p>
         </div>
+        <aside class="hero-aside" aria-label="How this experiment works">
+          <span class="tiny-label">ONE QUESTION. SHARED CONDITIONS.</span>
+          <div class="scenario-illustration" aria-hidden="true">
+            <span class="scenario-node baseline-node">$50<small>Baseline</small></span>
+            <span class="scenario-node">$75<small>Option A</small></span>
+            <span class="scenario-node">$100<small>Option B</small></span>
+          </div>
+          <p>Same panel. Same starting conditions.<br>Three shopping cycles. Different policies.</p>
+          <span class="caption">Illustrative thresholds, not observed company policy.</span>
+        </aside>
       </div>
-      <div class="composer-wrap">
-        <div class="composer">
-          <textarea id="decision" rows="1" placeholder="e.g. Starting next quarter, raise free shipping from $50 to $75 for online orders…"></textarea>
-          <div class="row">
-            <div class="opts">
-              <label># customers <select id="sample"><option>8</option><option>16</option><option selected>32</option><option>64</option></select></label>
-              <label>max rounds <select id="maxRounds"><option>2</option><option>4</option><option>6</option><option selected>10</option></select></label>
-              <label>speed <select id="conc"><option>4</option><option>6</option><option selected>8</option><option>10</option></select></label>
-            </div>
-            <button class="send" id="sendBtn" title="Run simulation">➤</button>
+
+      <form id="experiment-form">
+        <div class="card compose-card">
+          <div class="section-top">
+            <label class="field-heading" for="decision-text">Describe the change you want to explore</label>
+            <span class="badge">H0 · Shipping policy</span>
+          </div>
+          <textarea id="decision-text" data-draft rows="4" maxlength="4000" required placeholder="Should we raise our free-shipping threshold from $50 to $75 or $100, with a $7.95 fee below it?"></textarea>
+          <p class="hint">This prototype normalizes shipping thresholds and fees. After preparation, the structured fields below are authoritative; description edits do not silently change them. Other requests may need clarification rather than being simulated.</p>
+          <div class="compose-footer">
+            <button type="button" id="sample-button" class="button sample-button">↗ Use shipping-policy example</button>
+            <button type="submit" id="prepare-button" class="button primary">Prepare experiment <span aria-hidden="true">→</span></button>
           </div>
         </div>
-        <div class="est" id="estimate"></div>
-      </div>
+
+        <details id="setup-settings" class="card settings">
+          <summary>Experiment setup <span class="summary-note">Panel, model &amp; execution limits</span></summary>
+          <div class="settings-body">
+            <div class="field-grid">
+              <label class="wide">Experiment title<input id="experiment-title" data-draft maxlength="160" placeholder="Shipping policy review"></label>
+              <label>Sample customers<input id="customer-count" data-draft type="number" min="1" max="24" step="1" value="12" required></label>
+              <label>Employees<input id="employee-count" data-draft type="number" min="0" max="4" step="1" value="2" required></label>
+              <label>Suppliers<input id="supplier-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
+              <label>Resellers<input id="reseller-count" data-draft type="number" min="0" max="2" step="1" value="1" required></label>
+              <label>Shopping cycles<input id="cycle-count" data-draft type="number" min="1" max="3" step="1" value="3" required></label>
+              <label>Panel seed<input id="panel-seed" data-draft value="shipping-policy-demo" maxlength="120" required></label>
+            </div>
+            <p class="hint">Requested counts are not coverage claims. The prepared draft reports the actual frozen panel. Cycles are purchase opportunities, not years.</p>
+            <div class="runtime-settings">
+              <div class="section-top"><h3>Explicit model configuration</h3><span class="badge neutral">GitHub Copilot</span></div>
+              <p class="hint">Prefer an available MAI-Code model. Enter an exact model ID supported by your account and CLI; this app never guesses an ID or silently falls back. Verification may make a small schema-check model call.</p>
+              <div class="model-row">
+                <label>Requested model ID<input id="model-id" data-draft autocomplete="off" spellcheck="false" maxlength="120" placeholder="Exact ID from your installed Copilot CLI"></label>
+                <button type="button" id="preflight-button" class="button secondary" aria-label="Verify model">Verify model</button>
+              </div>
+              <div id="provider-status" class="provider-status" aria-live="polite">No model verified. Preparation does not start a simulation.</div>
+              <div class="field-grid execution-fields">
+                <label>Concurrent calls<input id="concurrency" data-draft type="number" min="1" max="8" step="1" value="4" required></label>
+                <label>Hard attempt budget<input id="attempt-cap" data-draft type="number" min="1" max="1000" step="1" value="320" required></label>
+                <label>Run deadline (minutes)<input id="deadline-minutes" data-draft type="number" min="1" max="30" step="1" value="15" required></label>
+                <label>Call timeout (seconds)<input id="call-timeout" data-draft type="number" min="1" max="120" step="1" value="60" required></label>
+              </div>
+              <p class="hint">Every attempt counts, including repairs and failures. A hard cap is a ceiling, not a promised cost estimate. H0 uses one repetition per option.</p>
+            </div>
+          </div>
+        </details>
+
+        <div id="draft-review" hidden>
+          <div class="section-heading">
+            <div><p class="eyebrow">Review before running</p><h2>Your experiment, made explicit</h2></div>
+            <span id="draft-state" class="badge">Unsaved draft</span>
+          </div>
+          <div id="draft-questions" class="notice warning" hidden></div>
+          <div id="draft-warnings" class="notice warning" hidden></div>
+          <div class="review-grid">
+            <section class="card pad" aria-labelledby="scope-heading">
+              <h3 id="scope-heading">Objective &amp; guardrails</h3>
+              <label for="objective-choice">Choose what this experiment should optimize</label>
+              <select id="objective-choice" data-draft>
+                <option value="contribution:maximize">Maximize simulated panel contribution</option>
+                <option value="purchases:maximize">Maximize fulfilled panel purchases</option>
+                <option value="abandonmentRate:minimize">Minimize simulated abandonment rate</option>
+                <option value="stockouts:minimize">Minimize simulated stockouts</option>
+                <option value="productRevenue:maximize">Maximize panel product revenue</option>
+              </select>
+              <p id="objective-summary" class="objective">Maximize simulated panel contribution.</p>
+              <p id="objective-explanation" class="hint">Product revenue + shipping revenue − cost of goods − shipping costs − incremental labor. Excludes overhead, taxes and capital costs; not net profit.</p>
+              <div id="objective-details"></div>
+              <div class="guardrail-editor inset">
+                <label class="checkbox-label"><input id="guardrail-enabled" data-draft type="checkbox"> Require a maximum simulated abandonment rate</label>
+                <label for="guardrail-max-abandonment">Maximum abandoned purchase opportunities (%)</label>
+                <input id="guardrail-max-abandonment" data-draft type="number" min="0" max="100" step="0.01" value="20" required disabled>
+                <p class="hint">Hard guardrail across every option, including baseline. Enter 20 for at most 20%; the saved threshold is 0.20. Denominator: scheduled customer purchase opportunities, not annual churn.</p>
+              </div>
+              <div id="constraint-details"></div>
+              <p class="hint">Changing success criteria requires reprepare and review. Policy revisions preserve the saved objective and guardrails; changing them starts a separate experiment.</p>
+              <div id="horizon-details" class="inset"></div>
+            </section>
+            <section class="card pad" aria-labelledby="source-heading">
+              <div class="section-top"><h3 id="source-heading">Source &amp; panel</h3><span class="badge neutral">Sample data</span></div>
+              <div id="source-summary"></div>
+              <details class="inline-details"><summary>Source coverage &amp; frozen identifiers</summary><div id="source-details"></div></details>
+            </section>
+          </div>
+          <section class="card pad options-section" aria-labelledby="options-heading">
+            <div class="section-top"><div><h3 id="options-heading">Baseline &amp; options</h3><p class="hint">Thresholds and fees are reviewed scenario assumptions, in US dollars.</p></div><button type="button" id="add-option" class="button secondary">Add option</button></div>
+            <div id="policy-options" class="policy-grid"></div>
+          </section>
+          <section class="card pad" aria-labelledby="assumptions-heading">
+            <div class="section-top"><div><h3 id="assumptions-heading">Assumptions, not source facts</h3><p class="hint">Review synthetic costs, budgets, stock and capacity. Blank cost inputs mean unknown, never zero. Changed inputs require a new prepared draft.</p></div><span class="badge warning-badge">Review required</span></div>
+            <div id="assumption-inputs" class="field-grid"></div>
+            <details class="inline-details"><summary>All assumptions &amp; their references</summary><div id="assumption-list"></div></details>
+            <details class="inline-details"><summary>Metric definitions &amp; denominators</summary><div id="metric-definitions"></div></details>
+          </section>
+          <div class="card run-gate">
+            <div id="estimate" class="estimate"></div>
+            <div class="gate-right">
+              <label class="checkbox-label"><input type="checkbox" id="review-confirm"> I reviewed the options, unknowns and synthetic assumptions.</label>
+              <div class="button-row">
+                <button type="button" id="reprepare-button" class="button secondary" hidden>Reprepare changes</button>
+                <button type="button" id="save-button" class="button primary" disabled>Save reviewed version</button>
+                <button type="button" id="start-button" class="button primary" disabled>Start simulation</button>
+              </div>
+              <p id="save-hint" class="hint">Save a reviewed, immutable version before starting.</p>
+            </div>
+          </div>
+          <div id="lineage" class="caption"></div>
+        </div>
+      </form>
     </section>
 
-    <!-- BUSINESS -->
-    <section class="view" id="view-business">
-      <h2>AdventureWorks Cycles</h2>
-      <div class="sub" id="bizWhat">Loading…</div>
-      <div class="statgrid" id="bizStats"></div>
-      <details class="card" style="margin-top:16px"><summary class="pad" style="cursor:pointer;font-weight:600;list-style:none">▸ Financials &amp; revenue breakdown</summary>
-        <div class="pad" style="border-top:1px solid var(--divider)" id="bizFin"></div>
-      </details>
+    <section id="run-section" aria-labelledby="run-heading" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">A shared world, changing with each cycle</p><h1 id="run-heading">Simulation workspace</h1><p id="run-identity" class="caption"></p></div>
+        <div class="button-row"><span id="run-state" class="badge">Not started</span><button type="button" id="cancel-button" class="button danger" disabled>Cancel run</button></div>
+      </div>
+      <div class="notice neutral-notice">All activity below is simulated. Leaving this page or disconnecting the viewer does not cancel work. Only “Cancel run” requests cancellation.</div>
+      <section class="card pad progress-card" aria-label="Run progress">
+        <div class="section-top"><h2 id="progress-label" aria-live="polite">Waiting for validated actions</h2><span id="current-cycle" class="caption"></span></div>
+        <progress id="run-progress" max="1" value="0" aria-labelledby="progress-label"></progress>
+        <div id="status-counts" class="status-counts"></div>
+        <p id="run-budget" class="hint"></p>
+        <p id="stream-status" class="caption" role="status" aria-live="polite"></p>
+        <button type="button" id="reconnect-button" class="button subtle" hidden>Reconnect viewer (no new model calls)</button>
+      </section>
+      <div class="live-grid">
+        <section class="card pad" aria-labelledby="feed-heading"><div class="section-top"><h2 id="feed-heading">Simulated activity</h2><span class="badge neutral">Committed record</span></div><ol id="event-feed" class="event-feed"></ol><p id="feed-empty" class="empty-copy">Validated actions will appear after a whole shopping cycle is committed.</p></section>
+        <section class="card pad" aria-labelledby="actors-heading"><h2 id="actors-heading">Meet the simulated panel</h2><p class="hint">Inspect a sample record’s context and its own observations. Profiles are not validated digital twins.</p><div id="actor-panel" class="actor-panel"></div></section>
+      </div>
+      <div class="section-heading"><p class="hint">Interim totals are incomplete and never ranked.</p><button type="button" id="view-comparison" class="button primary">View comparison <span aria-hidden="true">→</span></button></div>
     </section>
 
-    <!-- SIMULATION -->
-    <section class="view" id="view-simulation">
-      <div id="simwrap">
-        <canvas id="graph"></canvas>
-        <div class="sim-top">
-          <span class="sim-chip" id="simStatus">No simulation running</span>
-        </div>
-        <div class="zoom">
-          <button id="zin">+</button><button id="zout">−</button><button id="zreset" title="Reset view">⤢</button>
-        </div>
-        <div class="legend">
-          <span><i style="background:#107c10"></i>supports</span>
-          <span><i style="background:#8a8886"></i>mixed</span>
-          <span><i style="background:#c50f1f"></i>opposes</span>
-          <span><i style="background:#c8c6c4"></i>waiting</span>
-        </div>
-        <div class="sim-empty" id="simEmpty">Run a simulation from the <b style="margin:0 4px">Compose</b> tab to watch the stakeholder network react in real time.</div>
-        <div class="inspect" id="inspect"></div>
+    <section id="compare-section" aria-labelledby="compare-heading" hidden>
+      <div class="section-heading">
+        <div><p class="eyebrow">Follow every number back to its events</p><h1 id="compare-heading">Compare &amp; decide</h1><p id="comparison-subtitle" class="hint"></p></div>
+        <div class="button-row"><button type="button" id="replay-button" class="button secondary" disabled>Exact replay · no model calls</button><button type="button" id="revision-button" class="button secondary" disabled>Revise an option</button></div>
       </div>
+      <div id="comparison-verdict" class="notice neutral-notice" role="status"></div>
+      <div id="comparison-warnings"></div>
+      <div class="card comparison-card">
+        <div class="table-scroll" tabindex="0" role="region" aria-label="Scenario comparison; scroll horizontally on small screens">
+          <table id="comparison-table"><caption>Simulated outcomes for the frozen, unweighted panel. Select a value to inspect its ledger.</caption><thead></thead><tbody></tbody></table>
+        </div>
+      </div>
+      <div class="review-grid">
+        <section class="card pad"><h3>How to read this comparison</h3><p>One run per option, not a real-world confidence interval. Purchase deferrals and abandonments are simulated actions, not annual churn. Contribution is limited to declared costs.</p><p class="hint">The panel is unweighted. These outcomes do not estimate the whole customer population. Missing costs remain unknown; incomplete scenarios are not recommendations.</p></section>
+        <section class="card pad"><h3>Review the people behind the totals</h3><p class="hint">Inspect accepted actions, information boundaries and generated justifications before choosing a pilot.</p><div id="comparison-actors" class="actor-chips"></div></section>
+      </div>
+      <section class="card pad brief-section" aria-labelledby="brief-heading">
+        <div class="section-top"><div><h2 id="brief-heading">From experiment to decision brief</h2><p class="hint">Available only for complete, comparable results. Stored metrics supply the numbers; edit the Markdown for your team.</p></div><button type="button" id="brief-button" class="button primary" disabled>Create brief</button></div>
+        <div id="brief-editor" hidden>
+          <label for="brief-markdown">Editable decision brief (Markdown; never executed as HTML)</label>
+          <textarea id="brief-markdown" rows="20" spellcheck="true"></textarea>
+          <div class="section-top"><p id="brief-status" class="caption"></p><button type="button" id="download-brief" class="button secondary">Download Markdown</button></div>
+          <p class="hint">Edits are saved locally in this browser for this run. Review numeric edits against the linked metric records before sharing; the generated server copy remains unchanged.</p>
+        </div>
+      </section>
     </section>
+
+    <footer class="page-footer">
+      <div><strong>Simulated outcomes. Reviewable evidence.</strong><p>No automatic deployment, customer contact or promise of real-world accuracy.</p></div>
+      <a href="/legacy">Legacy exploratory scenarios (not comparable)</a>
+    </footer>
   </main>
 
-<script>
-const $=s=>document.querySelector(s), $$=s=>document.querySelectorAll(s);
-const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-const money=n=>{const a=Math.abs(n),s=n<0?"-":"";if(a>=1e6)return s+"$"+(a/1e6).toFixed(1)+"M";if(a>=1e3)return s+"$"+(a/1e3).toFixed(0)+"K";return s+"$"+Math.round(a);};
-const NICE={spend_delta_pct:"yearly spend change",churn_delta_pct:"chance of leaving",sentiment:"mood",workload_change:"workload",effectiveness_change:"effectiveness",revenue_index:"revenue",gross_margin_index:"gross margin",customer_satisfaction:"customer satisfaction",employee_morale:"employee morale",fulfillment_reliability:"fulfillment reliability",supplier_health:"supplier health",operational_strain:"operational strain",churn_risk:"churn risk",confidence:"confidence"};
-const nice=k=>NICE[k]||String(k).replace(/_/g," ").replace(/\bpct\b/g,"%").replace(/\bidx\b/gi,"").trim();
-
-/* ---------- tabs ---------- */
-function showTab(name){ $$(".tab").forEach(t=>t.classList.toggle("active",t.dataset.tab===name)); $$(".view").forEach(v=>v.classList.toggle("active",v.id==="view-"+name)); if(name==="simulation"){resizeGraph(); graphTick(true);} }
-$$(".tab").forEach(t=>t.addEventListener("click",()=>showTab(t.dataset.tab)));
-
-/* ---------- business ---------- */
-const PRESETS=[
-  ["Launch a $49/yr membership","Launch a paid loyalty membership: customers pay $49/year and get free shipping on every order plus 10% off every purchase."],
-  ["Raise free-shipping to $75","Raise the order value required for free shipping from $50 to $75; smaller orders pay standard shipping."],
-  ["Raise all bike prices 8%","Increase the list price of every bike by 8% across all regions, no change to accessories or shipping."],
-  ["Open a physical flagship store","Open a large physical flagship store in one major city, funded by trimming online discounts."],
-];
-PRESETS.forEach(p=>{const b=document.createElement("button");b.className="chip";b.textContent=p[0];b.onclick=()=>{$("#decision").value=p[1];$("#decision").focus();aut80();};$("#presetChips").appendChild(b);});
-async function loadBusiness(){
-  try{
-    const o=await (await fetch("/api/overview")).json();
-    $("#bizWhat").textContent=o.company.what;
-    const s=o.stats; const o2=o.org||{};
-    const stats=[["customers",s.customers.toLocaleString()],["employees",(o2.employees||0).toLocaleString()],["vendors",(o2.vendors||0).toLocaleString()],["resellers",(o2.resellers||0).toLocaleString()],["annual revenue",money(s.annualRevenue)],["gross margin",s.grossMarginPct+'%']];
-    $("#bizStats").innerHTML=stats.map(x=>`<div class="stat"><div class="v">${x[1]}</div><div class="k">${x[0]}</div></div>`).join("");
-    const gp=Math.round(s.annualRevenue*s.grossMarginPct/100), cogs=s.annualRevenue-gp;
-    const bar=(arr,key)=>arr.map(x=>`<div class="barrow"><div class="nm">${esc(x[key])}</div><div class="tk"><div class="fl" style="width:${x.pct}%"></div></div><div class="pc">${x.pct}%</div></div>`).join("");
-    $("#bizFin").innerHTML=`
-      <div class="lbl">Simplified annual P&amp;L</div>
-      <table style="max-width:460px"><tbody>
-        <tr><td>Revenue</td><td class="num">${money(s.annualRevenue)}</td></tr>
-        <tr><td>Cost of goods sold</td><td class="num neg">−${money(cogs)}</td></tr>
-        <tr class="totalrow"><td>Gross profit (${s.grossMarginPct}%)</td><td class="num">${money(gp)}</td></tr>
-      </tbody></table>
-      <div class="lbl" style="margin-top:16px">Revenue by product category</div>${bar(o.revenueByCategory,"category")}
-      <div class="lbl" style="margin-top:14px">Revenue by region</div>${bar(o.revenueByRegion,"region")}
-      ${o2.departments?`<div class="lbl" style="margin-top:16px">Workforce — ${o2.employees} employees across ${o2.departments.length} departments</div>`+o2.departments.slice(0,8).map(d=>`<div class="barrow"><div class="nm">${esc(d.name)}</div><div class="tk"><div class="fl" style="width:${Math.round(100*d.count/o2.employees)}%"></div></div><div class="pc">${d.count}</div></div>`).join(""):""}
-      ${o2.vendors?`<div class="tiny muted" style="margin-top:10px">Supply chain: ${o2.vendors} active vendors · ${o2.resellers} resellers · ${o2.territories} sales territories</div>`:""}
-      <div class="tiny muted" style="margin-top:8px">${esc(o.company.dataNote)}</div>`;
-  }catch(e){ $("#bizWhat").textContent="Could not load business data: "+e.message; }
-}
-loadBusiness();
-
-/* ---------- composer ---------- */
-const ta=$("#decision");
-function aut80(){ ta.style.height="auto"; ta.style.height=Math.min(150,ta.scrollHeight)+"px"; }
-ta.addEventListener("input",aut80);
-ta.addEventListener("keydown",e=>{ if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();startRun();} });
-function estimate(){
-  const n=+$("#sample").value, mr=+$("#maxRounds").value, conc=+$("#conc").value; const roles=31;
-  const minPerRound=Math.max(1,Math.round((roles+n)/conc*8/60));
-  $("#estimate").textContent=`${roles} real employees + supply-chain partners and ${n} real customers · up to ${mr} rounds (stops early when it stabilizes) · ~${minPerRound}–${minPerRound*mr} min · powered by your selected local AI CLI.`;
-}
-["sample","maxRounds","conc"].forEach(id=>$("#"+id).addEventListener("change",estimate)); estimate();
-
-/* ---------- run state (shared by chat + graph) ---------- */
-const RUN={es:null,running:false,nodes:[],edges:[],byId:{},steps:null,thinkEl:null,total:0};
-
-function startRun(){
-  if(RUN.running) return;
-  const text=ta.value.trim();
-  if(!text){ ta.focus(); return; }
-  $("#hero")?.remove();
-  addUserMsg(text);
-  ta.value=""; aut80();
-  const opts={sampleSize:$("#sample").value,maxRounds:$("#maxRounds").value,concurrency:$("#conc").value,proposal:text};
-  const think=addThinkCard(text);
-  resetGraph(text);
-  RUN.running=true; $("#sendBtn").disabled=true; $("#statusText").textContent="running";
-  step("start","Warming up the simulation engine","active");
-  RUN.metricsHistory=[];
-  const es=new EventSource("/api/simulate?"+new URLSearchParams(opts).toString()); RUN.es=es;
-  es.addEventListener("status",e=>{const d=JSON.parse(e.data);
-    if(d.phase==="engine"){ step("start","Engine ready · personas on "+d.model,"done"); step("read","Read your decision","done"); step("ctx","Loaded AdventureWorks — 18,484 real customers","done"); step("assemble","Assembling the whole bike-shop: staff, supply chain & customers…","active"); }
-    if(d.phase==="round"){ step("round"+d.round, `Round ${d.round} — everyone lives the change & reacts`, "active"); $("#simStatus").textContent="Round "+d.round; }
-    if(d.phase==="measuring"){ markDone("round"+d.round); step("meas"+d.round, `📊 Measuring the fallout of round ${d.round}…`, "active"); }
-    if(d.phase==="alternatives"){ step("alt","💡 A strategist is drafting better alternatives…","active"); }
-  });
-  es.addEventListener("plan",e=>{const d=JSON.parse(e.data); RUN.total=d.total;
-    step("assemble",`Assembled ${d.agents.length} people across ${new Set(d.agents.map(a=>a.group)).size} groups · up to ${d.maxRounds} rounds`,"done");
-    buildGraph(d.agents, d.edges);
-  });
-  es.addEventListener("agent",e=>{const a=JSON.parse(e.data);
-    setStepProg("round"+a.round,a.done,a.total); updateNode(a);
-  });
-  es.addEventListener("metrics",e=>{const d=JSON.parse(e.data); RUN.metricsHistory.push(d.metrics);
-    markDone("meas"+d.round); const m=d.metrics||{};
-    const sat=Math.round(m.customer_satisfaction||0), mor=Math.round(m.employee_morale||0), rev=Math.round(m.revenue_index||100);
-    const pill=(lbl,val,good,bad)=>`<span class="pill-m ${val>=good?"g":val<=bad?"b":"n"}">${lbl} ${val}/100</span>`;
-    step("m"+d.round, `<b>Round ${d.round}</b> settled &nbsp;${pill("Customers",sat,65,50)}${pill("Staff",mor,60,45)}<span class="pill-m ${rev>=100?"g":rev<97?"b":"n"}">Revenue ${rev}</span> <span class="tiny muted">moved by ${d.delta}</span>`, "done");
-    $("#simStatus").textContent = d.converged? "Stabilized ✓" : ("Round "+d.round+" · Δ"+d.delta);
-    if(d.converged) step("conv","Metrics stabilized — stopping early ✓","done");
-  });
-  es.addEventListener("done",e=>{const d=JSON.parse(e.data);
-    Object.keys(RUN.steps||{}).forEach(markDone);
-    step("agg", d.meta.converged? `Stabilized after ${d.meta.rounds} rounds — writing the report`:`Ran ${d.meta.rounds} rounds — writing the report`, "done");
-    renderReport(think,d); finish(); $("#simStatus").textContent="Complete"; simSettle();
-  });
-  es.addEventListener("error",()=>{ if(RUN.running){ step("err","The run ended early (connection closed).","done"); finish(); } });
-}
-function finish(){ RUN.running=false; if(RUN.es){RUN.es.close();RUN.es=null;} $("#sendBtn").disabled=false; $("#statusText").textContent="ready"; }
-
-/* ---------- chat rendering ---------- */
-function addUserMsg(t){ const el=div(`<div class="msg user"><div class="av user">🧑‍💼</div><div class="bubble">${esc(t)}</div></div>`); $("#chat").appendChild(el); scrollChat(); }
-function addThinkCard(t){
-  const el=div(`<div class="msg bot think-msg"><div class="av bot">✦</div><div class="think card">
-     <div class="head"><span class="t">Simulating…</span><div class="r"><button class="btn" data-pop>Watch it live ↗</button></div></div>
-     <div class="steps"></div></div></div>`);
-  $("#chat").appendChild(el); scrollChat();
-  el.querySelector("[data-pop]").onclick=()=>showTab("simulation");
-  RUN.steps={}; RUN.thinkEl=el;
-  return el;
-}
-function step(key,label,state){ const box=RUN.thinkEl.querySelector(".steps"); let s=RUN.steps[key];
-  if(!s){ s=div(`<div class="step"><span class="mk"></span><span class="tx"></span></div>`); box.appendChild(s); RUN.steps[key]=s; }
-  s.className="step "+(state||""); s.querySelector(".tx").innerHTML=label+(state==="active"?'<div class="prog"><i></i></div>':"");
-  scrollChat();
-}
-function setStepProg(key,done,total){ const s=RUN.steps[key]; if(!s)return; const base=s.querySelector(".tx").textContent.replace(/\s*\(\d+\/\d+\)/,"").replace(/^(.*?)(0\/\d+.*)?$/,"$1").trim();
-  const label=base.replace(/\(.*?\)/,"").trim(); s.querySelector(".tx").innerHTML=esc(label.replace(/\s*$/,""))+` (${done}/${total})<div class="prog"><i style="width:${Math.round(100*done/total)}%"></i></div>`;
-  if(done>=total){ s.className="step done"; s.querySelector(".tx").innerHTML=esc(label)+` (${total}/${total})`; }
-}
-function markDone(key){ const s=RUN.steps&&RUN.steps[key]; if(s&&!s.classList.contains("done")){ s.className="step done"; const p=s.querySelector(".prog"); if(p)p.remove(); } }
-
-function alternativesBlock(d){ if(!d.alternatives||!d.alternatives.length) return "";
-  return `<div class="lbl" style="margin-top:16px">💡 A strategist's better alternatives</div><div style="display:flex;flex-direction:column;gap:8px">${d.alternatives.map((a,i)=>`<div style="border:1px solid var(--stroke);border-radius:var(--r-m);padding:11px 13px"><div style="font-weight:600">${esc(a.title||("Alternative "+(i+1)))}</div><div style="margin:3px 0 6px">${esc(a.text||"")}</div><div class="tiny muted">Why it could do better: ${esc(a.rationale||"")}</div><button class="btn brand" style="margin-top:8px" data-alt="${i}">▶ Simulate this instead</button></div>`).join("")}</div>`;
-}
-function runProposal(text){ if(RUN.running||!text) return; ta.value=text; aut80(); showTab("compose"); startRun(); }
-function metricsBlock(d){ if(!d.metrics||!d.metrics.length) return "";
-  const val=m=> m.kind==="index"? m.value : m.value+"/100";
-  const good=m=> m.kind==="down"? m.value<45 : m.kind==="index"? m.value>=100 : m.value>=65;
-  const bad=m=> m.kind==="down"? m.value>60 : m.kind==="index"? m.value<97 : m.value<50;
-  const cells=d.metrics.map(m=>`<div class="kpi ${good(m)?"improve":bad(m)?"worsen":"neutral"}"><div class="k">${esc(m.label)}</div><div class="v" style="font-size:18px">${val(m)}</div></div>`).join("");
-  let trend=""; const h=d.metricsHistory; if(h&&h.length>1){ trend=`<details class="more"><summary>round-by-round trend ▾</summary><table><thead><tr><th>round</th>${d.metrics.map(m=>`<th class="num">${esc(m.label.split(" ")[0])}</th>`).join("")}</tr></thead><tbody>${h.map((row,i)=>`<tr><td>${i+1}</td>${d.metrics.map(m=>`<td class="num">${Math.round((row&&row[m.key])||0)}</td>`).join("")}</tr>`).join("")}</tbody></table></details>`; }
-  return `<div class="lbl" style="margin-top:14px">Business health once it settles</div><div class="kgrid">${cells}</div>${trend}`;
-}
-function renderReport(think,d){
-  think.querySelector(".head .t").textContent="Result";
-  const v=d.verdict||"caution", vc=v==="good"?"good":v==="bad"?"bad":"caution";
-  const c=d.crowd||{};
-  const crowd=c.n?`<div class="crowdbar"><div style="width:${c.positivePct}%;background:#107c10"></div><div style="width:${c.neutralPct}%;background:#c8c6c4"></div><div style="width:${c.negativePct}%;background:#c50f1f"></div></div><div class="tiny muted" style="margin-top:4px">${c.positivePct}% positive · ${c.neutralPct}% neutral · ${c.negativePct}% negative · ${c.n} customers</div>`:"";
-  const kpis=(d.kpis||[]).map(k=>`<div class="kpi ${k.direction}"><div class="k">${esc(k.name)}</div><div class="v">${esc(k.display)}</div><div class="s">${esc(k.sub||"")}</div></div>`).join("");
-  const econ=d.economics?`<div class="lbl">${esc(d.economics.title)}</div><table style="max-width:520px"><tbody>${d.economics.rows.map(r=>`<tr class="${r.kind==="total"?"totalrow":""}"><td>${esc(r.label)}</td><td class="num ${r.kind==="pos"?"pos":r.kind==="neg"?"neg":""}">${esc(r.value)}</td></tr>`).join("")}</tbody></table>`:"";
-  const seg=d.segmentTable&&d.segmentTable.length?`<div class="lbl">Who reacts how</div><table><thead><tr><th>Group</th><th class="num">#</th><th class="num">spend Δ</th><th class="num">revenue</th><th class="num">mood</th></tr></thead><tbody>${d.segmentTable.map(r=>`<tr><td>${esc(r.segment)}</td><td class="num">${r.n}</td><td class="num ${r.spendDeltaPct<0?"neg":r.spendDeltaPct>0?"pos":""}">${r.spendDeltaPct>0?"+":""}${r.spendDeltaPct}%</td><td class="num">${esc(r.revImpact)}</td><td class="num ${r.sentiment<0?"neg":r.sentiment>0?"pos":""}">${r.sentiment>0?"+":""}${r.sentiment}</td></tr>`).join("")}</tbody></table>`:"";
-  const disc=d.discrimination?`<div class="lbl">Sanity check</div><table style="max-width:480px"><thead><tr><th>Metric</th><th class="num">Your idea</th><th class="num">Bad control</th></tr></thead><tbody>${d.discrimination.rows.map(r=>`<tr><td>${esc(r.name)}</td><td class="num">${esc(r.good)}</td><td class="num neg">${esc(r.bad)}</td></tr>`).join("")}</tbody></table><div class="tiny muted" style="margin-top:6px">${esc(d.discrimination.verdict)}</div>`:"";
-  const meth=(d.methodology||[]).map(m=>`<li>${esc(m)}</li>`).join("");
-  const rep=div(`<div style="padding:4px 16px 16px">
-     <div class="verdict ${vc}"><div class="vt">${v==="good"?"✅":v==="bad"?"⛔":"⚠️"} ${esc(d.verdictLabel||"")}</div><div>${esc(d.summaryText||"")}</div>${crowd}</div>
-     <div class="kgrid">${kpis}</div>
-     ${metricsBlock(d)}
-     ${alternativesBlock(d)}
-     <details class="more"><summary>See the money, the segments &amp; the method ▾</summary>
-       ${econ}${seg}${disc}<div class="lbl">How this was produced</div><ul class="tiny muted" style="margin:0;padding-left:18px">${meth}</ul>
-       <div class="tiny muted" style="margin-top:8px">${d.meta.agentCalls} live agent calls · ${esc(d.meta.model)} · <a href="#" data-pop2>open the stakeholder graph ↗</a></div>
-     </details></div>`);
-  think.querySelector(".think").appendChild(rep);
-  rep.querySelector("[data-pop2]").onclick=(e)=>{e.preventDefault();showTab("simulation");};
-  rep.querySelectorAll("[data-alt]").forEach(b=>b.onclick=()=>runProposal(d.alternatives[+b.dataset.alt].text));
-  scrollChat();
-}
-function div(html){ const d=document.createElement("div"); d.innerHTML=html.trim(); return d.firstChild; }
-function scrollChat(){ requestAnimationFrame(()=>window.scrollTo({top:document.body.scrollHeight,behavior:"smooth"})); }
-
-/* ================= FORCE GRAPH ================= */
-const cv=$("#graph"), cx=cv.getContext("2d");
-let cam={s:1,x:0,y:0}, dragging=null, hoverNode=null;
-const COL={support:"#107c10",oppose:"#c50f1f",neutral:"#8a8886",pending:"#c8c6c4"};
-function region(a){ if(a.kind==="internal"){ const m=/—\s*(.+)$/.exec(a.label); return m?m[1].trim():"HQ"; }
-  const parts=(a.context||a.label||"").split("·").map(s=>s.trim()); return parts[parts.length-1]||(a.label||"").split("·")[0].trim(); }
-function stanceOf(a){ const p=a.parsed; if(!p)return"pending";
-  if(a.kind==="internal")return p.recommendation==="adopt"?"support":p.recommendation==="reject"?"oppose":"neutral";
-  const s=+p.sentiment||0,d=+p.spend_delta_pct||0; return (s>=0.5||d>=3)?"support":(s<=-0.5||d<=-3)?"oppose":"neutral"; }
-
-function resetGraph(title){ RUN.nodes=[]; RUN.edges=[]; RUN.byId={}; hoverNode=null; closeInspect(); $("#simEmpty").style.display="none"; $("#simStatus").textContent="Starting…"; cam={s:1,x:0,y:0};
-  RUN.hub={i:-1,kind:"hub",label:"AdventureWorks",title:title,x:0,y:0,vx:0,vy:0,fixed:true,r:26,stance:"hub"}; RUN.nodes.push(RUN.hub); }
-function buildGraph(agents, edges){
-  const byGroup={};
-  const ring={exec:120,managers:215,frontline:300,supply:320,customers:410};
-  agents.forEach(a=>{ const g=a.group; const base=ring[g]||360; const ang=Math.random()*Math.PI*2; const rad=base+(Math.random()*44-22);
-    const n={...a,x:Math.cos(ang)*rad,y:Math.sin(ang)*rad,vx:0,vy:0,r:g==="customers"?6:(g==="exec"?15:11),stance:"pending",parsed:null,activated:0,pulse:0};
-    RUN.nodes.push(n); RUN.byId[a.i]=n; (byGroup[g]=byGroup[g]||[]).push(n); });
-  if(edges&&edges.length){
-    (byGroup.exec||[]).forEach(n=>RUN.edges.push({a:RUN.hub,b:n,anchor:true}));
-    edges.forEach(([a,b])=>{ const na=RUN.byId[a], nb=RUN.byId[b]; if(na&&nb) RUN.edges.push({a:na,b:nb}); });
-  } else {
-    const pick=arr=>arr&&arr.length?arr[Math.floor(Math.random()*arr.length)]:RUN.hub;
-    (byGroup.exec||[]).forEach(n=>RUN.edges.push({a:RUN.hub,b:n}));
-    (byGroup.supply||[]).forEach(n=>RUN.edges.push({a:pick(byGroup.exec),b:n}));
-    (byGroup.managers||[]).forEach(n=>RUN.edges.push({a:pick(byGroup.exec),b:n}));
-    (byGroup.frontline||[]).forEach(n=>RUN.edges.push({a:pick(byGroup.managers),b:n}));
-    (byGroup.customers||[]).forEach(n=>RUN.edges.push({a:pick(byGroup.frontline),b:n}));
-  }
-  $("#simStatus").textContent="Round 1"; graphTick(true);
-}
-function updateNode(a){ if(a.kind==="control")return; const n=RUN.byId[a.i]; if(!n)return;
-  n.parsed=a.parsed; n.raw=a.raw; n.prompt=a.prompt; n.ok=a.ok; n.context=a.context; n.stance=stanceOf(a); n.activated=1; n.pulse=1; graphKick(); }
-function graphKick(){ RUN._alpha=Math.max(RUN._alpha||0,.9); if(!RUN._raf) graphTick(); }
-function simSettle(){ RUN._alpha=.3; }
-
-function physics(){ const N=RUN.nodes; const alpha=RUN._alpha||0;
-  for(let i=0;i<N.length;i++){ const a=N[i]; if(a.fixed)continue;
-    for(let j=0;j<N.length;j++){ if(i===j)continue; const b=N[j]; let dx=a.x-b.x,dy=a.y-b.y,d2=dx*dx+dy*dy||0.01,d=Math.sqrt(d2);
-      const rep=(a.r+b.r)*90/d2; a.vx+=dx/d*rep*alpha; a.vy+=dy/d*rep*alpha; } }
-  for(const e of RUN.edges){ const a=e.a,b=e.b; let dx=b.x-a.x,dy=b.y-a.y,d=Math.sqrt(dx*dx+dy*dy)||.01; const rest=a===RUN.hub&&b.kind==="internal"?150:110; const f=(d-rest)*0.02*alpha;
-    if(!a.fixed){a.vx+=dx/d*f;a.vy+=dy/d*f;} if(!b.fixed){b.vx-=dx/d*f;b.vy-=dy/d*f;} }
-  for(const n of N){ if(n.fixed)continue; n.vx+=-n.x*0.0016*alpha; n.vy+=-n.y*0.0016*alpha; n.vx*=0.86; n.vy*=0.86; n.x+=n.vx; n.y+=n.vy; }
-  RUN._alpha=Math.max(0,alpha*0.985-0.0006);
-}
-function draw(){ const W=cv.width,H=cv.height,dpr=window.devicePixelRatio||1; cx.setTransform(dpr,0,0,dpr,0,0); cx.clearRect(0,0,W,H);
-  const ox=cv.clientWidth/2+cam.x, oy=cv.clientHeight/2+cam.y; const S=cam.s;
-  const X=n=>n.x*S+ox, Y=n=>n.y*S+oy;
-  cx.lineWidth=1;
-  for(const e of RUN.edges){ const active=e.b.activated; cx.strokeStyle=active?"rgba(15,108,189,.28)":"rgba(0,0,0,.07)"; cx.beginPath(); cx.moveTo(X(e.a),Y(e.a)); cx.lineTo(X(e.b),Y(e.b)); cx.stroke(); }
-  for(const n of RUN.nodes){ const x=X(n),y=Y(n),r=(n.r||6)*Math.min(1.6,S);
-    if(n.pulse>0){ cx.beginPath(); cx.arc(x,y,r+ (1-n.pulse)*22,0,7); cx.strokeStyle=`rgba(15,108,189,${n.pulse*0.5})`; cx.lineWidth=2; cx.stroke(); n.pulse=Math.max(0,n.pulse-0.03); }
-    if(n.kind==="hub"){ cx.fillStyle="#0f6cbd"; roundRect(x-26,y-16,52,32,10); cx.fill(); cx.fillStyle="#fff"; cx.font="600 12px "+FONT; cx.textAlign="center"; cx.textBaseline="middle"; cx.fillText("HQ",x,y); continue; }
-    const col=COL[n.stance]||COL.pending; cx.beginPath(); cx.arc(x,y,r,0,7); cx.fillStyle=n.activated?tint(col):"#eceae8"; cx.fill(); cx.lineWidth=n===hoverNode?3:2; cx.strokeStyle=col; cx.stroke();
-    if(n.group==="exec"||n.group==="managers"){ cx.fillStyle="#605e5c"; cx.font="600 10px "+FONT; cx.textAlign="center"; cx.textBaseline="top"; cx.fillText(shortLabel(n.label),x,y+r+3); }
-  }
-  if(hoverNode&&hoverNode.kind==="customer"){ const x=X(hoverNode),y=Y(hoverNode); const t=hoverNode.label+(hoverNode.context?" · "+hoverNode.context:""); cx.font="12px "+FONT; const w=cx.measureText(t).width+16; cx.fillStyle="rgba(36,36,36,.92)"; roundRect(x+10,y-14,w,24,6); cx.fill(); cx.fillStyle="#fff"; cx.textAlign="left"; cx.textBaseline="middle"; cx.fillText(t,x+18,y-2); }
-}
-const FONT="'Segoe UI',system-ui,sans-serif";
-function shortRole(l){ if(/Finance/.test(l))return"Finance"; if(/Fulfillment/.test(l))return"Fulfillment"; if(/Marketing/.test(l))return"Marketing"; const m=/—\s*(.+)$/.exec(l); return m?"Sales · "+m[1]:l; }
-function shortLabel(l){ return l.replace("Regional Sales Manager — ","Sales·").replace(" / "," ").replace("Warehouse Fulfillment Manager","Warehouse").replace("E-commerce Lead","E-commerce").replace("Operations Director","Operations").replace("Finance Director","Finance").replace("Retail Store Manager","Store Mgr").replace("Merchandising Buyer","Buyer").replace("HR People Lead","HR").split(" ").slice(0,2).join(" "); }
-function tint(hex){ const c=hex.replace("#",""); const r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16); return `rgba(${r},${g},${b},0.16)`; }
-function roundRect(x,y,w,h,r){ cx.beginPath(); cx.moveTo(x+r,y); cx.arcTo(x+w,y,x+w,y+h,r); cx.arcTo(x+w,y+h,x,y+h,r); cx.arcTo(x,y+h,x,y,r); cx.arcTo(x,y,x+w,y,r); cx.closePath(); }
-function graphTick(force){ if(RUN._raf)cancelAnimationFrame(RUN._raf); const loop=()=>{ physics(); draw(); if((RUN._alpha||0)>0.002||RUN.nodes.some(n=>n.pulse>0)){ RUN._raf=requestAnimationFrame(loop);} else {RUN._raf=null; draw();} }; if(force)RUN._alpha=Math.max(RUN._alpha||0,.9); loop(); }
-
-function resizeGraph(){ const dpr=window.devicePixelRatio||1; cv.width=cv.clientWidth*dpr; cv.height=cv.clientHeight*dpr; draw(); }
-window.addEventListener("resize",()=>{resizeGraph();});
-/* interactions */
-function toWorld(mx,my){ const ox=cv.clientWidth/2+cam.x, oy=cv.clientHeight/2+cam.y; return {x:(mx-ox)/cam.s,y:(my-oy)/cam.s}; }
-function nodeAt(mx,my){ const w=toWorld(mx,my); let best=null,bd=1e9; for(const n of RUN.nodes){ const dx=n.x-w.x,dy=n.y-w.y,d=Math.hypot(dx,dy); if(d<(n.r+6)&&d<bd){bd=d;best=n;} } return best; }
-cv.addEventListener("mousemove",e=>{ const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
-  if(dragging){ cam.x+=mx-dragging.x; cam.y+=my-dragging.y; dragging={x:mx,y:my}; draw(); return; }
-  const n=nodeAt(mx,my); if(n!==hoverNode){ hoverNode=n; cv.style.cursor=n?"pointer":"grab"; draw(); } });
-cv.addEventListener("mousedown",e=>{ const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; const n=nodeAt(mx,my); if(n&&n.kind!=="hub"){ openInspect(n);} else { dragging={x:mx,y:my}; } });
-window.addEventListener("mouseup",()=>dragging=null);
-cv.addEventListener("wheel",e=>{ e.preventDefault(); const r=cv.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top; const before=toWorld(mx,my); cam.s=Math.max(.3,Math.min(3,cam.s*(e.deltaY<0?1.12:0.9))); const ox=cv.clientWidth/2+cam.x, oy=cv.clientHeight/2+cam.y; cam.x+=mx-(before.x*cam.s+ox); cam.y+=my-(before.y*cam.s+oy); draw(); },{passive:false});
-$("#zin").onclick=()=>{cam.s=Math.min(3,cam.s*1.2);draw();}; $("#zout").onclick=()=>{cam.s=Math.max(.3,cam.s/1.2);draw();}; $("#zreset").onclick=()=>{cam={s:1,x:0,y:0};draw();};
-
-/* inspector */
-function openInspect(n){ const p=n.parsed; const st=n.stance;
-  const nums=p?Object.entries(p).filter(([k,v])=>typeof v==="number").map(([k,v])=>`<span><i>${esc(nice(k))}</i> ${v}</span>`).join(""):"";
-  const feel=p&&(p.how_it_feels||p.human_impact);
-  const lists=p&&(p.concerns||p.benefits)?`${p.concerns?`<div class="lbl">Concerns</div><ul class="tiny muted" style="margin:0;padding-left:16px">${p.concerns.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}${p.benefits?`<div class="lbl">Benefits</div><ul class="tiny muted" style="margin:0;padding-left:16px">${p.benefits.map(c=>`<li>${esc(c)}</li>`).join("")}</ul>`:""}`:"";
-  $("#inspect").innerHTML=`<div class="ih"><b>${esc(n.label)}</b><span class="tag ${st}">${st}</span><button class="x">✕</button></div>
-    <div class="ibody"><div class="ctx">${esc(n.context||"")}</div>
-    ${!p?'<div class="muted">Waiting for this stakeholder to respond…</div>':`
-      ${feel?`<div class="quote">“${esc(p.how_it_feels||p.human_impact)}”</div>`:""}
-      ${p.reaction?`<div>${esc(p.reaction)}</div>`:`<div>${esc(p.reasoning||"")}</div>`}
-      ${p.decision?`<div class="lbl">What they do about it</div><div>${esc(p.decision)}</div>`:""}
-      ${p.key_factor?`<div class="lbl">Biggest factor</div><div>${esc(p.key_factor)}</div>`:""}
-      ${p.recommendation?`<div class="lbl">Recommendation</div><div>${esc(p.recommendation.replace(/_/g," "))}</div>`:""}
-      <div class="kv" style="margin-top:12px">${nums}</div>${lists}
-      <details class="more" style="margin-top:10px"><summary>debug</summary><div class="lbl">Prompt</div><pre>${esc(n.prompt||"")}</pre><div class="lbl">Raw output</div><pre>${esc(n.raw||"")}</pre></details>`}</div>`;
-  $("#inspect").classList.add("open"); $("#inspect .x").onclick=closeInspect;
-}
-function closeInspect(){ $("#inspect").classList.remove("open"); }
-
-/* boot */
-$("#sendBtn").onclick=startRun;
-resizeGraph();
-</script>
-</body></html>
+  <dialog id="history-dialog" aria-labelledby="history-heading">
+    <div class="dialog-heading"><div><p class="eyebrow">Saved, not restarted</p><h2 id="history-heading">Experiment history</h2></div><button type="button" class="icon-button" data-close aria-label="Close history">×</button></div>
+    <p class="hint">Load a saved version or reconnect to a run. Viewing history never starts inference.</p>
+    <div id="history-list"></div>
+  </dialog>
+  <dialog id="detail-dialog" aria-labelledby="detail-heading">
+    <div class="dialog-heading"><h2 id="detail-heading">Evidence inspector</h2><button type="button" class="icon-button" data-close aria-label="Close inspector">×</button></div>
+    <div id="detail-content"></div>
+  </dialog>
+  <dialog id="evidence-dialog" aria-labelledby="evidence-heading">
+    <div class="dialog-heading"><h2 id="evidence-heading">Source reference</h2><button type="button" class="icon-button" data-close aria-label="Close source reference">×</button></div>
+    <div id="evidence-content"></div>
+  </dialog>
+  <dialog id="revision-dialog" aria-labelledby="revision-heading">
+    <div class="dialog-heading"><div><p class="eyebrow">A fresh counterfactual, not a continuation</p><h2 id="revision-heading">Review a policy revision</h2></div><button type="button" class="icon-button" data-close aria-label="Close revision">×</button></div>
+    <p class="hint">Keep the snapshot, panel, graph, opportunities, initial state, model and horizon fixed. Change only these policy fields. The baseline will be simulated again.</p>
+    <form id="revision-form">
+      <label for="revision-text">Decision note (descriptive; structured fields below define the change)</label>
+      <textarea id="revision-text" rows="3" maxlength="4000"></textarea>
+      <div id="revision-options" class="revision-options"></div>
+      <button type="button" id="revision-example" class="button subtle">Example: first option $75 threshold, $3.95 fee</button>
+      <h3>Exact normalized policy diff</h3>
+      <div id="revision-diff" class="inset"></div>
+      <p id="revision-parent" class="caption"></p>
+      <label class="checkbox-label"><input type="checkbox" id="revision-confirm" required> I reviewed this exact policy difference.</label>
+      <div class="dialog-actions"><button type="submit" class="button primary" id="save-revision">Save revision (does not run)</button></div>
+    </form>
+  </dialog>
+  <noscript><p class="notice error">Enable JavaScript to prepare experiments and inspect saved simulations. No model calls start without your explicit action.</p></noscript>
+</body>
+</html>

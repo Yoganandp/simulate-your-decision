@@ -1,19 +1,16 @@
-// server.mjs — local web server for the interactive simulator + debugger.
-// Endpoints:
-//   GET /                      -> the web UI (web/app.html)
-//   GET /api/overview          -> data-driven business overview (cached)
-//   GET /api/simulate (SSE)    -> streams each agent as it responds, then the aggregate
-// No npm dependencies; runs agents through the user's selected local AI CLI.
+// The persistent shipping workflow and legacy exploratory scenarios use separate APIs.
 
 import http from "node:http";
 import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
 import { AiEngine, extractJson } from "./aiEngine.mjs";
 import { computeOverview } from "./overview.mjs";
 import live from "./scenarioLive.mjs";
 import retail from "./scenarioRetail.mjs";
 import membership from "./scenarioMembership.mjs";
+import { createSimulationApi } from "./sim/api.mjs";
+import { createLocalAccess, setLocalHeaders } from "./localAccess.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, "..");
@@ -26,7 +23,16 @@ let overviewCache = null;
 function getOverview() { if (!overviewCache) overviewCache = computeOverview(); return overviewCache; }
 
 async function safeAsk(engine, prompt, model) {
-  try { return await engine.ask(prompt, model ? { model } : undefined); } catch (e) { return JSON.stringify({ error: String((e && e.message) || e) }); }
+  return engine.ask(prompt, { ...(model ? { model } : {}), retries: 0 });
+}
+
+function usableLegacyResponse(value, definition) {
+  if (!value || typeof value !== "object" || Array.isArray(value) || value.error || value.is_error) return false;
+  if (definition.kind === "customer") {
+    const spending = value.spend_delta_pct ?? value.annual_spend_delta_pct;
+    if (typeof spending !== "number" || !Number.isFinite(spending)) return false;
+  }
+  return typeof (value.reaction ?? value.reasoning) === "string";
 }
 
 async function poolRun(engine, defs, concurrency, onResult, cancelled) {
@@ -37,7 +43,13 @@ async function poolRun(engine, defs, concurrency, onResult, cancelled) {
       const i = next++; if (i >= defs.length) break;
       const d = defs[i];
       let raw = "", parsed = null;
-      for (let a = 0; a < 3 && !parsed; a++) { raw = await safeAsk(engine, d.prompt, d.model); parsed = extractJson(raw); }
+      for (let a = 0; a < 2 && !parsed && !cancelled(); a++) {
+        raw = await safeAsk(engine, d.prompt, d.model);
+        const candidate = extractJson(raw);
+        if (usableLegacyResponse(candidate, d)) parsed = candidate;
+      }
+      if (cancelled()) return;
+      if (!parsed) throw new Error(`Invalid response for ${d.label}; legacy results are incomplete.`);
       results[i] = { ...d, raw, parsed };
       const completed = ++done;
       onResult(results[i], i, completed, defs.length);
@@ -70,8 +82,11 @@ async function runLive(send, engine, scenario, params, isCancelled) {
     if (isCancelled()) { await engine.stop(); return; }
 
     send("status", { phase: "measuring", round });
-    let mRaw = ""; try { mRaw = await engine.ask(scenario.measurementPrompt(ctx, round, reactions, metricsHistory[metricsHistory.length - 1]), { model: scenario.ANALYST_MODEL }); } catch { /* ignore */ }
-    const metrics = extractJson(mRaw) || metricsHistory[metricsHistory.length - 1] || {};
+    const mRaw = await engine.ask(scenario.measurementPrompt(ctx, round, reactions, metricsHistory[metricsHistory.length - 1]), { model: scenario.ANALYST_MODEL, retries: 0 });
+    const metrics = extractJson(mRaw);
+    if (!metrics || metrics.error || !scenario.METRICS.every(([key]) => typeof metrics[key] === "number" && Number.isFinite(metrics[key]))) {
+      throw new Error("Legacy analyst metrics are missing or invalid; no convergence or completed result is available.");
+    }
     metricsHistory.push(metrics);
     const conv = scenario.converged(metricsHistory[metricsHistory.length - 2], metrics);
     const isConv = round >= 2 && conv.converged;
@@ -105,7 +120,10 @@ async function streamSimulate(req, res, params) {
   const send = (event, data) => { if (!res.writableEnded) res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`); };
   const heartbeat = setInterval(() => { if (!res.writableEnded) res.write(":\n\n"); }, 15000);
   let cancelled = false;
-  req.on("close", () => { cancelled = true; });
+  res.on("close", () => {
+    cancelled = true;
+    engine?.stop().catch((error) => console.error("Could not stop legacy inference:", error.message));
+  });
 
   const scenario = SCENARIOS[params.scenario] || live;
   const concurrency = Math.max(1, Math.min(10, parseInt(params.concurrency || "6", 10)));
@@ -186,32 +204,92 @@ async function streamSimulate(req, res, params) {
   }
 }
 
-const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  try {
-    if (url.pathname === "/" || url.pathname === "/index.html") {
-      const html = readFileSync(join(ROOT, "web", "app.html"));
-      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-      return res.end(html);
+export async function createAppServer(options = {}) {
+  const simulation = await createSimulationApi(options);
+  const access = createLocalAccess();
+  const assets = new Map([
+    ["/", ["app.html", "text/html; charset=utf-8"]],
+    ["/index.html", ["app.html", "text/html; charset=utf-8"]],
+    ["/legacy", ["legacy.html", "text/html; charset=utf-8"]],
+    ["/legacy.html", ["legacy.html", "text/html; charset=utf-8"]],
+    ["/simulations.js", ["simulations.js", "text/javascript; charset=utf-8"]],
+    ["/simulations.css", ["simulations.css", "text/css; charset=utf-8"]],
+  ]);
+  const server = http.createServer(async (req, res) => {
+    setLocalHeaders(res);
+    const denial = access.authorize(req);
+    if (denial) {
+      res.writeHead(403, { "Content-Type": "application/json" });
+      return res.end(JSON.stringify({ error: denial }));
     }
-    if (url.pathname === "/api/health") { res.writeHead(200, { "Content-Type": "application/json" }); return res.end('{"ok":true}'); }
-    if (url.pathname === "/api/overview") {
-      const o = getOverview();
-      res.writeHead(200, { "Content-Type": "application/json" });
-      return res.end(JSON.stringify(o));
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname === "/favicon.ico" && req.method === "GET") {
+        res.writeHead(204);
+        return res.end();
+      }
+      const asset = assets.get(url.pathname);
+      if (asset && req.method === "GET") {
+        setLocalHeaders(res, { legacy: asset[0] === "legacy.html" });
+        const contents = readFileSync(join(ROOT, "web", asset[0]));
+        res.writeHead(200, { "Content-Type": asset[1] });
+        return res.end(contents);
+      }
+      if (url.pathname === "/api/health" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ ok: true, product: "Copilot Simulations", schemaVersion: 1 }));
+      }
+      if (url.pathname === "/api/session" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify({ token: access.token }));
+      }
+      if (await simulation.handle(req, res, url)) return;
+      if (url.pathname === "/api/overview" && req.method === "GET") {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        return res.end(JSON.stringify(getOverview()));
+      }
+      if (url.pathname === "/api/simulate" && req.method === "GET") {
+        return await streamSimulate(req, res, Object.fromEntries(url.searchParams));
+      }
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Not found" }));
+    } catch (error) {
+      console.error("Request failed:", error.message);
+      if (!res.headersSent) res.writeHead(500, { "Content-Type": "application/json" });
+      if (!res.writableEnded) res.end(JSON.stringify({ error: "The local request failed. See the server log." }));
     }
-    if (url.pathname === "/api/simulate") {
-      return streamSimulate(req, res, Object.fromEntries(url.searchParams));
-    }
-    res.writeHead(404, { "Content-Type": "text/plain" });
-    res.end("Not found");
-  } catch (e) {
-    res.writeHead(500, { "Content-Type": "text/plain" });
-    res.end("Server error: " + String((e && e.message) || e));
-  }
-});
+  });
+  server.requestTimeout = 30000;
+  server.headersTimeout = 15000;
+  return {
+    server,
+    simulation,
+    async close() {
+      await simulation.close();
+      const closing = new Promise((resolve, reject) => server.close((error) => {
+        if (error && error.code !== "ERR_SERVER_NOT_RUNNING") reject(error);
+        else resolve();
+      }));
+      server.closeAllConnections?.();
+      await closing;
+    },
+  };
+}
 
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`\n  Decision Studio running:  http://localhost:${PORT}\n`);
-  console.log("  Open it in Chrome/Edge, type a decision, and watch the agents reason live.\n");
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const app = await createAppServer();
+  app.server.listen(PORT, "127.0.0.1", () => {
+    console.log(`\n  Copilot Simulations: http://localhost:${PORT}`);
+    console.log("  AdventureWorks sample data; simulated panel outcomes, not validated predictions.");
+    console.log(`  Legacy exploratory scenarios: http://localhost:${PORT}/legacy\n`);
+  });
+  let stopping = false;
+  const shutdown = async () => {
+    if (stopping) return;
+    stopping = true;
+    try { await app.close(); }
+    catch (error) { console.error("Shutdown failed:", error.message); process.exitCode = 1; }
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}

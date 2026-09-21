@@ -1,30 +1,32 @@
 # Start here
 
-## Let your AI agent set it up
-
-Clone or download the repo, open a terminal in this folder, and launch `copilot`,
-`claude`, or `codex`. Then paste:
-
-> Set up and run this project using your own CLI. Check the prerequisites, run the
-> setup for your provider, start the server, verify it is healthy, and give me the
-> local URL.
-
-Open the URL the agent gives you, normally <http://localhost:5050>.
-
-## Or run it yourself
+Install Node.js 20.19+ (20.x) or 22.12+ and authenticate GitHub Copilot CLI. Select an explicit model ID
+available to your account, preferably MAI-Code; do not assume a display name is an ID.
 
 ```bash
-npm run setup
+npm ci
+npm run setup -- --provider copilot --model YOUR_AVAILABLE_MODEL_ID
 npm run serve
 ```
 
-## What should I type?
+Open <http://localhost:5050> and describe a shipping-policy change:
 
-Describe one specific decision with concrete details:
+> Raise the free-shipping threshold from $50 to $75. Keep shipping at $7.95.
+> Compare contribution over three shopping cycles.
 
-> Starting next quarter, raise the free-shipping threshold from $50 to $75 for online
-> orders. Keep standard shipping at $7.95 and try to improve margin without increasing
-> customer churn.
+Prepare the draft, review the baseline/options and every material assumption, then save
+and run. Missing costs remain unknown; supply reviewed values before expecting a
+contribution comparison. Inspect the underlying events and sample-record evidence,
+revise an option, and export a decision brief.
 
-Good inputs state what changes, the old and new values, who is affected, and the goal.
-Paste the decision into **Compose** and press the arrow.
+History survives a refresh. Replay uses saved actions without inference; Cancel stops
+work explicitly. Results are simulated, unweighted panel outcomes over purchase
+opportunities, not annual forecasts or observed customer behavior.
+
+The older exploratory interface remains at <http://localhost:5050/legacy>. Its heuristic
+membership/retail outputs are separate from the shipping experiment workflow.
+
+The official Copilot SDK uses your existing Copilot login. A separate personal GitHub
+login can be used for repository access; no separate MAI API key is required.
+
+See [README.md](README.md) for persistence, model setup, API, commands, and limitations.

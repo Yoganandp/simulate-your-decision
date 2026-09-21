@@ -1,16 +1,25 @@
 {
-  "name": "decision-studio-public-multi-cli",
-  "version": "1.0.0",
+  "name": "copilot-simulations",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
-  "description": "Local multi-agent business decision simulator using public AdventureWorks data and the user's choice of Copilot, Claude, or Codex CLI.",
+  "description": "Local evidence-linked shipping-policy experiments with a deterministic panel ledger and explicit Copilot model configuration.",
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "1.0.14"
+  },
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "setup:data": "node scripts/fetch-data.mjs",
     "check:provider": "node scripts/check-provider.mjs",
+    "walkthrough": "node scripts/walkthrough.mjs",
     "serve": "node src/server.mjs",
     "test:engine": "node test/engine-test.mjs",
-    "test": "node test/ai-engine-unit.mjs && node test/scenario-smoke.mjs && node test/retail-smoke.mjs",
+    "test": "npm run test:legacy && npm run test:simulations",
+    "test:legacy": "node test/ai-engine-unit.mjs && node test/scenario-smoke.mjs && node test/retail-smoke.mjs",
+    "test:simulations": "node --test test/runtime-unit.mjs test/copilot-harness-unit.mjs test/domain-unit.mjs test/persistence-unit.mjs test/orchestration-unit.mjs test/local-access-unit.mjs test/legacy-regression.mjs test/http-integration.mjs test/walkthrough-unit.mjs",
     "data": "node src/loadAdventureWorks.mjs",
     "overview": "node src/overview.mjs",
     "simulate": "node src/run.mjs",

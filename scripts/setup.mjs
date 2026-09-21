@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { AiEngine, PROVIDERS, detectInstalledProviders } from "../src/aiEngine.mjs";
+import { AiEngine, PROVIDERS, detectInstalledProviders, getConfiguredProvider, preflightProvider } from "../src/aiEngine.mjs";
 import { fetchData } from "./fetch-data.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -12,7 +12,10 @@ const CONFIG_FILE = join(CONFIG_DIR, "ai-provider.json");
 const args = process.argv.slice(2);
 const valueOf = (name) => {
   const exact = args.indexOf(name);
-  if (exact >= 0) return args[exact + 1];
+  if (exact >= 0) {
+    if (!args[exact + 1] || args[exact + 1].startsWith("--")) throw new Error(`${name} requires a value.`);
+    return args[exact + 1];
+  }
   const prefixed = args.find((arg) => arg.startsWith(name + "="));
   return prefixed ? prefixed.slice(name.length + 1) : null;
 };
@@ -42,37 +45,61 @@ async function chooseProvider() {
 async function configureProvider() {
   const provider = await chooseProvider();
   if (!PROVIDERS[provider]) throw new Error(`Unknown provider "${provider}". Use copilot, claude, or codex.`);
-  const model = valueOf("--model") || process.env.AI_MODEL || null;
+  const saved = getConfiguredProvider();
+  const model = valueOf("--model") || process.env.AI_MODEL || (saved.provider === provider ? saved.model : null);
   const installed = detectInstalledProviders().find((item) => item.id === provider);
   if (!installed) {
     throw new Error(`${PROVIDERS[provider].label} is not installed. Install it from ${PROVIDERS[provider].installUrl}`);
   }
+  if (provider !== "copilot") console.log(PROVIDERS[provider].login);
 
+  if (!has("--skip-provider-check")) {
+    let engine;
+    try {
+      if (model) {
+        const status = await preflightProvider({ provider, model });
+        if (!status.ready) {
+          console.error(status.error.message);
+          if (status.error.category === "authentication") console.error(PROVIDERS[provider].login);
+          process.exitCode = 1;
+          return false;
+        }
+        console.log(`Explicit model preflight succeeded (${status.cliVersion}).`);
+        console.log(status.resolvedModel
+          ? `CLI-reported model: ${status.resolvedModel}.`
+          : "Model identity remains unresolved, not independently verified.");
+      } else if (provider === "copilot") {
+        console.log("Copilot selected without model verification. H0 requires an explicit --model and SDK preflight using the existing Copilot login.");
+      } else {
+        engine = new AiEngine({ provider, concurrency: 1 });
+        await engine.start();
+        const response = await engine.ask("Reply with exactly READY and nothing else.", { timeout: 60000, retries: 0 });
+        if (response.trim() !== "READY") throw new Error("The provider did not return the expected readiness response.");
+        console.log("Legacy provider request succeeded. H0 still requires an explicit --model and preflight.");
+      }
+    } catch (error) {
+      console.error(`\n${error.message}`);
+      if (error.category === "authentication") console.error(PROVIDERS[provider].login);
+      console.error("Correct the provider configuration and rerun `npm run setup`.");
+      process.exitCode = 1;
+      return false;
+    } finally {
+      await engine?.stop();
+    }
+  }
   mkdirSync(CONFIG_DIR, { recursive: true });
   writeFileSync(CONFIG_FILE, JSON.stringify({ provider, model }, null, 2) + "\n");
   console.log(`\nSelected ${PROVIDERS[provider].label}${model ? ` (${model})` : ""}.`);
-
-  if (!has("--skip-provider-check")) {
-    const engine = new AiEngine({ provider, model, concurrency: 1 });
-    try {
-      await engine.start();
-      const response = await engine.ask("Reply with exactly READY and nothing else.", { timeout: 120000, retries: 0 });
-      if (!/\bREADY\b/i.test(response)) throw new Error(`Unexpected response: ${response.slice(0, 160)}`);
-      console.log("AI login verified.");
-    } catch (error) {
-      console.error(`\n${error.message}`);
-      console.error(PROVIDERS[provider].login);
-      console.error("After signing in, rerun `npm run setup`.");
-      process.exitCode = 1;
-      return false;
-    }
-  }
+  if (has("--skip-provider-check")) console.log("Provider access and model identity have not been verified.");
   return true;
 }
 
 async function main() {
-  const major = Number(process.versions.node.split(".")[0]);
-  if (major < 18) throw new Error(`Node.js 18+ is required; found ${process.version}.`);
+  const [major, minor] = process.versions.node.split(".").map(Number);
+  const supported = (major === 20 && minor >= 19) || (major === 22 && minor >= 12) || major > 22;
+  if (!supported || process.versions.node.includes("-")) {
+    throw new Error(`Node.js ^20.19.0 || >=22.12.0 is required by the Copilot SDK; found ${process.version}.`);
+  }
 
   if (!has("--data-only")) {
     const configured = await configureProvider();
